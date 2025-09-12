@@ -4,11 +4,12 @@ import { LlamaParseReader } from "llama-cloud-services";
 import { uploadMarkdownToBlob } from "./uploadMarkdownToBlob";
 import "dotenv/config";
 
-export async function parseDocumentFromUrl(url: string) {
+export async function extractMarkdownOnly(url: string) {
   const apiKey = process.env.LLAMA_CLOUD_API_KEY;
   if (!apiKey) {
     throw new Error("LLAMA_CLOUD_API_KEY environment variable is not set.");
   }
+
   const parser = new LlamaParseReader({
     apiKey,
     resultType: "markdown",
@@ -16,8 +17,9 @@ export async function parseDocumentFromUrl(url: string) {
   });
 
   try {
-    console.log(`Submitting document from URL for parsing: ${url}`);
+    console.log(`Extracting markdown from URL: ${url}`);
     const documents = await parser.loadData(url);
+
     if (documents && documents.length > 0) {
       let extractedText = "";
 
@@ -26,6 +28,7 @@ export async function parseDocumentFromUrl(url: string) {
           extractedText += doc.text + "\n\n";
         }
       }
+
       const extractionDate = new Date().toISOString();
       const markdownContent = `# Extracted Document Content
 
@@ -36,7 +39,7 @@ export async function parseDocumentFromUrl(url: string) {
 
 ${extractedText}`;
 
-      // Upload to Vercel Blob instead of local storage
+      // Upload to Vercel Blob
       const uploadResult = await uploadMarkdownToBlob(
         markdownContent,
         url,
@@ -52,11 +55,10 @@ ${extractedText}`;
       }
 
       console.log(
-        `\n✅ Extracted content saved to Vercel Blob: ${uploadResult.fileName}`
+        `\n✅ Markdown extracted and saved to Vercel Blob: ${uploadResult.fileName}`
       );
       console.log(`📁 Blob URL: ${uploadResult.url}`);
 
-      // Return the extracted text for display
       return {
         success: true,
         text: extractedText,
@@ -74,7 +76,7 @@ ${extractedText}`;
       };
     }
   } catch (error) {
-    console.error("An error occurred during parsing:", error);
+    console.error("An error occurred during markdown extraction:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error occurred",

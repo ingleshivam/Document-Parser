@@ -1,7 +1,7 @@
 "use server";
 
 import { QdrantClient } from "@qdrant/js-client-rest";
-import OpenAI from "openai";
+import { HuggingFaceAPIEmbedding } from "@/lib/embedModel";
 
 type StoreResult =
   | { success: true; collection: string; points: number }
@@ -65,48 +65,48 @@ export async function storeMarkdownInQdrant(params: {
 
   const qdrantUrl = process.env.QDRANT_URL;
   const qdrantApiKey = process.env.QDRANT_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const hfToken = process.env.HF_TOKEN;
 
-  if (!qdrantUrl || !openaiKey) {
+  if (!qdrantUrl || !hfToken) {
     return {
       success: false,
-      error: "Missing QDRANT_URL or OPENAI_API_KEY in environment",
+      error: "Missing QDRANT_URL or HF_TOKEN in environment",
     };
   }
 
   try {
     const client = new QdrantClient({ url: qdrantUrl, apiKey: qdrantApiKey });
 
-    // Ensure the collection exists (embedding size 3072 for text-embedding-3-large)
+    // Ensure the collection exists (embedding size 1024 for HuggingFace multilingual-e5-large)
     try {
       await client.getCollection(collection);
     } catch {
       await client.createCollection(collection, {
-        vectors: { size: 3072, distance: "Cosine" },
+        vectors: { size: 1024, distance: "Cosine" },
       });
     }
 
-    const openai = new OpenAI({ apiKey: openaiKey });
+    // Initialize HuggingFace embedding model
+    const embeddingModel = new HuggingFaceAPIEmbedding();
 
     // Chunk the markdown for better RAG performance
     const chunks = chunkText(markdown);
     const title = extractTitle(markdown, sourceUrl);
     const createdAt = new Date().toISOString();
 
-    // Generate embeddings for all chunks
-    const emb = await openai.embeddings.create({
-      model: "text-embedding-3-large",
-      input: chunks,
-    });
+    // Generate embeddings for all chunks using HuggingFace
+    const embeddings = await Promise.all(
+      chunks.map((chunk) => embeddingModel.getTextEmbedding(chunk))
+    );
 
-    if (!emb.data || emb.data.length === 0) {
+    if (!embeddings || embeddings.length === 0) {
       return { success: false, error: "Failed to generate embeddings" };
     }
 
     // Prepare points for Qdrant
     const points = chunks.map((chunk, index) => ({
       id: Date.now() + index, // Simple ID generation
-      vector: emb.data[index].embedding,
+      vector: embeddings[index],
       payload: {
         text: chunk,
         title,

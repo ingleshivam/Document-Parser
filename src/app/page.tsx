@@ -1,6 +1,8 @@
 "use client";
 
 import { parseDocumentFromUrl } from "@/actions/parseDocumentFromUrl";
+import { extractMarkdownOnly } from "@/actions/extractMarkdownOnly";
+import { processDocumentForQdrant } from "@/actions/processDocumentForQdrant";
 import { ThemeButton } from "@/components/theme-button";
 import { Button } from "@/components/ui/button";
 import { SidebarLeft } from "@/components/sidebar-left";
@@ -11,24 +13,63 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { useState } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { useState, useEffect } from "react";
 import { uploadPdfToBlob } from "@/actions/uploadPdfToBlob";
-import { storeMarkdownInQdrant } from "@/actions/storeMarkdownInQdrant";
+import { listMarkdownFiles } from "@/actions/listMarkdownFiles";
+import { deleteMarkdownFile } from "@/actions/deleteMarkdownFile";
+import { getMarkdownContent } from "@/actions/getMarkdownContent";
+import {
+  getProcessedDocuments,
+  ProcessedDocument,
+} from "@/actions/getProcessedDocuments";
+import { queryDocument, ChatMessage } from "@/actions/queryDocument";
+
+// Export the Conversation interface for use in other components
+export interface Conversation {
+  id: string;
+  title: string;
+  documentId: string;
+  documentTitle: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
 import { toast } from "sonner";
 
 interface ParseResult {
   success: boolean;
   text?: string;
   fileName?: string;
+  blobUrl?: string;
   sourceUrl?: string;
   extractionDate?: string;
+  sourceFileName?: string;
   error?: string;
+}
+
+interface MarkdownFile {
+  url: string;
+  fileName: string;
+  size: number;
+  uploadedAt: string;
+  downloadUrl: string;
+  sourceUrl?: string;
+  sourceFileName?: string;
 }
 
 export default function Page() {
   const [isUploading, setIsUploading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isStoring, setIsStoring] = useState(false);
+  const [isExtractingMarkdown, setIsExtractingMarkdown] = useState(false);
   const [result, setResult] = useState<ParseResult | null>(null);
   const [activeSection, setActiveSection] = useState("dashboard");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -36,6 +77,270 @@ export default function Page() {
   const [extractedMarkdown, setExtractedMarkdown] = useState<string | null>(
     null
   );
+  const [markdownFiles, setMarkdownFiles] = useState<MarkdownFile[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [previewFile, setPreviewFile] = useState<MarkdownFile | null>(null);
+  const [previewContent, setPreviewContent] = useState<string>("");
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // Chat state
+  const [processedDocuments, setProcessedDocuments] = useState<
+    ProcessedDocument[]
+  >([]);
+  const [selectedDocument, setSelectedDocument] =
+    useState<ProcessedDocument | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [currentQuestion, setCurrentQuestion] = useState("");
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+
+  // Conversation history state
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<
+    string | null
+  >(null);
+
+  // Generate conversation title from first question
+  const generateConversationTitle = (question: string): string => {
+    // Take first 50 characters and add ellipsis if longer
+    const maxLength = 50;
+    if (question.length <= maxLength) {
+      return question;
+    }
+    return question.substring(0, maxLength).trim() + "...";
+  };
+
+  // Save conversation to localStorage
+  const saveConversation = (conversation: Conversation) => {
+    const savedConversations = JSON.parse(
+      localStorage.getItem("conversations") || "[]"
+    );
+    const existingIndex = savedConversations.findIndex(
+      (c: Conversation) => c.id === conversation.id
+    );
+
+    if (existingIndex >= 0) {
+      savedConversations[existingIndex] = conversation;
+    } else {
+      savedConversations.unshift(conversation); // Add to beginning
+    }
+
+    localStorage.setItem("conversations", JSON.stringify(savedConversations));
+    setConversations(savedConversations);
+  };
+
+  // Load conversations from localStorage
+  const loadConversations = () => {
+    const savedConversations = JSON.parse(
+      localStorage.getItem("conversations") || "[]"
+    );
+    setConversations(savedConversations);
+  };
+
+  // Start new conversation
+  const startNewConversation = () => {
+    setCurrentConversationId(null);
+    setChatMessages([]);
+    setSelectedDocument(null);
+  };
+
+  // Load conversation
+  const loadConversation = (conversationId: string) => {
+    const conversation = conversations.find((c) => c.id === conversationId);
+    if (conversation) {
+      setCurrentConversationId(conversationId);
+      setChatMessages(conversation.messages);
+
+      // Find and set the document
+      const document = processedDocuments.find(
+        (d) => d.id === conversation.documentId
+      );
+      if (document) {
+        setSelectedDocument(document);
+      }
+
+      // Switch to chat section
+      setActiveSection("chat");
+    }
+  };
+
+  // Load markdown files from Vercel Blob
+  const loadMarkdownFiles = async () => {
+    setIsLoadingFiles(true);
+    try {
+      const result = await listMarkdownFiles();
+      if (result.success) {
+        setMarkdownFiles(result.files);
+      } else {
+        toast.error("Failed to load files", {
+          description: result.error,
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to load files", {
+        description: "An unexpected error occurred",
+      });
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  // Delete markdown file from Vercel Blob
+  const handleDeleteMarkdownFile = async (url: string, fileName: string) => {
+    try {
+      const result = await deleteMarkdownFile(url);
+      if (result.success) {
+        setMarkdownFiles((prev) => prev.filter((file) => file.url !== url));
+        toast.success("File deleted successfully", {
+          description: `${fileName} has been removed`,
+        });
+      } else {
+        toast.error("Failed to delete file", {
+          description: result.error,
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to delete file", {
+        description: "An unexpected error occurred",
+      });
+    }
+  };
+
+  // Handle file preview
+  const handlePreviewFile = async (file: MarkdownFile) => {
+    setPreviewFile(file);
+    setIsPreviewOpen(true);
+    setIsLoadingPreview(true);
+
+    try {
+      const result = await getMarkdownContent(file.url);
+      if (result.success) {
+        setPreviewContent(result.content);
+      } else {
+        toast.error("Failed to load file content", {
+          description: result.error,
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to load file content", {
+        description: "An unexpected error occurred",
+      });
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  // Load processed documents for chat
+  const loadProcessedDocuments = async () => {
+    setIsLoadingDocuments(true);
+    try {
+      const result = await getProcessedDocuments();
+      if (result.success) {
+        setProcessedDocuments(result.documents);
+      } else {
+        toast.error("Failed to load documents", {
+          description: result.error,
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to load documents", {
+        description: "An unexpected error occurred",
+      });
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  };
+
+  // Handle chat message submission
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDocument || !currentQuestion.trim() || isLoadingChat) return;
+
+    const userMessage: ChatMessage = {
+      role: "user",
+      content: currentQuestion,
+      timestamp: new Date().toISOString(),
+    };
+
+    const updatedMessages = [...chatMessages, userMessage];
+    setChatMessages(updatedMessages);
+    setCurrentQuestion("");
+    setIsLoadingChat(true);
+
+    try {
+      const result = await queryDocument(
+        currentQuestion,
+        selectedDocument.sourceUrl,
+        chatMessages
+      );
+
+      if (result.success && result.answer) {
+        const assistantMessage: ChatMessage = {
+          role: "assistant",
+          content: result.answer,
+          timestamp: new Date().toISOString(),
+        };
+
+        const finalMessages = [...updatedMessages, assistantMessage];
+        setChatMessages(finalMessages);
+
+        // Save or update conversation
+        const conversationId = currentConversationId || `conv_${Date.now()}`;
+        const isNewConversation = !currentConversationId;
+
+        const conversation: Conversation = {
+          id: conversationId,
+          title: isNewConversation
+            ? generateConversationTitle(currentQuestion)
+            : conversations.find((c) => c.id === conversationId)?.title ||
+              generateConversationTitle(currentQuestion),
+          documentId: selectedDocument.id,
+          documentTitle: selectedDocument.title,
+          messages: finalMessages,
+          createdAt: isNewConversation
+            ? new Date().toISOString()
+            : conversations.find((c) => c.id === conversationId)?.createdAt ||
+              new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        saveConversation(conversation);
+        setCurrentConversationId(conversationId);
+      } else {
+        toast.error("Failed to get answer", {
+          description: result.error || "Unknown error occurred",
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to get answer", {
+        description: "An unexpected error occurred",
+      });
+    } finally {
+      setIsLoadingChat(false);
+    }
+  };
+
+  // Load files and conversations on component mount
+  useEffect(() => {
+    loadMarkdownFiles();
+    loadConversations();
+  }, []);
+
+  // Load processed documents when chat section is active
+  useEffect(() => {
+    if (activeSection === "chat") {
+      loadProcessedDocuments();
+    }
+  }, [activeSection]);
+
+  // Auto-scroll to bottom when new messages are added
+  useEffect(() => {
+    const chatMessagesContainer = document.getElementById("chat-messages");
+    if (chatMessagesContainer) {
+      chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+    }
+  }, [chatMessages]);
 
   const handleSubmit = async () => {
     setIsExtracting(true);
@@ -91,6 +396,650 @@ export default function Page() {
           <div className="max-w-6xl mx-auto px-6 py-8">
             {activeSection === "dashboard" ? (
               <OverviewContent />
+            ) : activeSection === "files" ? (
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold light:text-gray-900 dark:text-white mb-4">
+                    Files & Documents
+                  </h2>
+                  <p className="text-lg light:text-gray-600 dark:text-gray-400">
+                    Manage your processed documents and extracted markdown files
+                  </p>
+                  <p className="text-md light:text-gray-600 dark:text-gray-400">
+                    Upload a file and click Extract Markdown to generate a
+                    markdown file.
+                  </p>
+                </div>
+
+                {/* Files List */}
+                <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadChat with Documentsw-xl border border-gray-200 dark:border-slate-700 p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-semibold light:text-gray-900 dark:text-white">
+                      Markdown Files
+                    </h3>
+                    <Button
+                      onClick={loadMarkdownFiles}
+                      disabled={isLoadingFiles}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {isLoadingFiles ? (
+                        <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                          />
+                        </svg>
+                      )}
+                      <span className="ml-2">Refresh</span>
+                    </Button>
+                  </div>
+
+                  {isLoadingFiles ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="ml-2 light:text-gray-600 dark:text-gray-400">
+                        Loading files...
+                      </span>
+                    </div>
+                  ) : markdownFiles.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg
+                          className="w-8 h-8 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                      </div>
+                      <h4 className="text-lg font-medium light:text-gray-900 dark:text-white mb-2">
+                        No files yet
+                      </h4>
+                      <p className="light:text-gray-600 dark:text-gray-400">
+                        Process some documents to see them here
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {markdownFiles.map((file) => (
+                        <div
+                          key={file.url}
+                          className="flex items-center justify-between p-4 light:bg-gray-50 dark:bg-slate-700 rounded-lg border light:border-gray-200 dark:border-slate-600 light:hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors cursor-pointer group"
+                          onClick={() => handlePreviewFile(file)}
+                        >
+                          <div className="flex items-center space-x-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <svg
+                                className="w-5 h-5 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <h4 className="font-medium light:text-gray-900 dark:text-white truncate">
+                                  {file.sourceFileName || file.fileName}
+                                </h4>
+                                <svg
+                                  className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                  />
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                                  />
+                                </svg>
+                              </div>
+                              <p className="text-sm light:text-gray-500 dark:text-gray-400 truncate">
+                                {file.sourceUrl
+                                  ? `From: ${file.sourceUrl}`
+                                  : "Markdown file"}
+                              </p>
+                              <div className="flex items-center space-x-2 text-xs light:text-gray-600 dark:text-gray-400 mt-1">
+                                <span>{(file.size / 1024).toFixed(1)} KB</span>
+                                <span>•</span>
+                                <span>
+                                  {new Date(
+                                    file.uploadedAt
+                                  ).toLocaleDateString()}
+                                </span>
+                                <span>•</span>
+                                <span className="flex items-center">
+                                  <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                                  Success
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 flex-shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(file.downloadUrl, "_blank");
+                              }}
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                              </svg>
+                              <span className="ml-1">Download</span>
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteMarkdownFile(
+                                  file.url,
+                                  file.fileName
+                                );
+                              }}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                              <span className="ml-1">Delete</span>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : activeSection === "chat" ? (
+              <div className="h-[calc(100vh-8rem)] flex flex-col">
+                <div className="text-center mb-6 flex-shrink-0">
+                  <h2 className="text-3xl font-bold light:text-gray-900 dark:text-white mb-2">
+                    Chat with Documents
+                  </h2>
+                  <p className="text-lg light:text-gray-600 dark:text-gray-400">
+                    Ask questions about your processed documents using AI
+                  </p>
+                </div>
+
+                {/* Responsive Grid Layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
+                  {/* Chat History - 25% on large screens, full width on mobile */}
+                  <div className="col-span-1 lg:col-span-1 flex flex-col order-first mb-5 min-h-0">
+                    <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 flex flex-col h-full min-h-0">
+                      {/* Conversation History Header */}
+                      <div className="px-4 py-3 border-b light:border-gray-200 dark:border-slate-600 flex-shrink-0">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-semibold light:text-gray-900 dark:text-white">
+                            Chat History
+                          </h3>
+                          <Button
+                            onClick={startNewConversation}
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                          >
+                            <svg
+                              className="w-3 h-3 mr-1"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 4v16m8-8H4"
+                              />
+                            </svg>
+                            New
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Conversation List */}
+                      <div className="flex-1 overflow-y-auto p-2">
+                        {conversations.length === 0 ? (
+                          <div className="p-3 text-center text-xs text-muted-foreground">
+                            No conversations yet
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            {conversations.map((conversation) => (
+                              <div
+                                key={conversation.id}
+                                className={`p-2 rounded-lg border cursor-pointer transition-colors hover:bg-accent ${
+                                  currentConversationId === conversation.id
+                                    ? "bg-accent border-primary"
+                                    : "light:border-gray-200 dark:border-slate-600"
+                                }`}
+                                onClick={() =>
+                                  loadConversation(conversation.id)
+                                }
+                              >
+                                <p className="font-medium truncate text-xs">
+                                  {conversation.title}
+                                </p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {conversation.documentTitle}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(
+                                    conversation.updatedAt
+                                  ).toLocaleDateString()}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Chat Interface - 50% on large screens, full width on mobile */}
+                  <div className="col-span-1 lg:col-span-2 flex flex-col order-2 mb-5 min-h-0">
+                    <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 flex flex-col h-full min-h-0">
+                      {/* Chat Header */}
+                      <div className="px-6 py-4 border-b light:border-gray-200 dark:border-slate-600 flex-shrink-0">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                              <svg
+                                className="w-4 h-4 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                                />
+                              </svg>
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white">
+                                {selectedDocument
+                                  ? selectedDocument.title
+                                  : "Select a Document"}
+                              </h3>
+                              <p className="text-sm light:text-gray-600 dark:text-gray-400">
+                                {selectedDocument
+                                  ? `${selectedDocument.chunkCount} chunks available`
+                                  : "Choose a document to start chatting"}
+                              </p>
+                            </div>
+                          </div>
+                          {selectedDocument && (
+                            <Button
+                              onClick={startNewConversation}
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center space-x-2"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 4v16m8-8H4"
+                                />
+                              </svg>
+                              <span>New Chat</span>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Chat Messages */}
+                      <div
+                        id="chat-messages"
+                        className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4 min-h-0"
+                      >
+                        {!selectedDocument ? (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg
+                                  className="w-8 h-8 text-gray-400"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                  />
+                                </svg>
+                              </div>
+                              <h4 className="text-lg font-medium light:text-gray-900 dark:text-white mb-2">
+                                No Document Selected
+                              </h4>
+                              <p className="light:text-gray-600 dark:text-gray-400">
+                                Select a document from the right panel to start
+                                asking questions
+                              </p>
+                            </div>
+                          </div>
+                        ) : chatMessages.length === 0 ? (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg
+                                  className="w-8 h-8 text-blue-600 dark:text-blue-400"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                                  />
+                                </svg>
+                              </div>
+                              <h4 className="text-lg font-medium light:text-gray-900 dark:text-white mb-2">
+                                Ready to Chat!
+                              </h4>
+                              <p className="light:text-gray-600 dark:text-gray-400">
+                                Ask any question about "{selectedDocument.title}
+                                "
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          chatMessages.map((message, index) => (
+                            <div
+                              key={index}
+                              className={`flex ${
+                                message.role === "user"
+                                  ? "justify-end"
+                                  : "justify-start"
+                              }`}
+                            >
+                              <div
+                                className={`max-w-[85%] sm:max-w-[80%] rounded-lg px-3 py-2 sm:px-4 sm:py-3 ${
+                                  message.role === "user"
+                                    ? "bg-blue-500 text-white"
+                                    : "light:bg-gray-100 dark:bg-slate-700 light:text-gray-900 dark:text-white"
+                                }`}
+                              >
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                                  {message.content}
+                                </p>
+                                <p
+                                  className={`text-xs mt-1 ${
+                                    message.role === "user"
+                                      ? "text-blue-100"
+                                      : "light:text-gray-500 dark:text-gray-400"
+                                  }`}
+                                >
+                                  {new Date(
+                                    message.timestamp
+                                  ).toLocaleTimeString()}
+                                </p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+
+                        {isLoadingChat && (
+                          <div className="flex justify-start">
+                            <div className="light:bg-gray-100 dark:bg-slate-700 rounded-lg px-4 py-3">
+                              <div className="flex items-center space-x-2">
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                <div
+                                  className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.1s" }}
+                                ></div>
+                                <div
+                                  className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.2s" }}
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Chat Input */}
+                      {selectedDocument && (
+                        <div className="p-4 lg:p-6 border-t light:border-gray-200 dark:border-slate-600 flex-shrink-0">
+                          <form
+                            onSubmit={handleChatSubmit}
+                            className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3"
+                          >
+                            <input
+                              type="text"
+                              value={currentQuestion}
+                              onChange={(e) =>
+                                setCurrentQuestion(e.target.value)
+                              }
+                              placeholder="Ask a question about this document..."
+                              className="flex-1 px-4 py-3 light:bg-gray-50 dark:bg-slate-700 border light:border-gray-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 light:text-gray-900 dark:text-white placeholder-gray-500"
+                              disabled={isLoadingChat}
+                            />
+                            <Button
+                              type="submit"
+                              disabled={
+                                !currentQuestion.trim() || isLoadingChat
+                              }
+                              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-6 py-3 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                            >
+                              {isLoadingChat ? (
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <div className="flex items-center space-x-2">
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                                    />
+                                  </svg>
+                                  <span className="hidden sm:inline">Send</span>
+                                </div>
+                              )}
+                            </Button>
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Document List - 25% on large screens, full width on mobile */}
+                  <div className="col-span-1 lg:col-span-1 flex flex-col order-last mb-5 min-h-0">
+                    <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 flex flex-col h-full min-h-0">
+                      {/* Document List Header */}
+                      <div className="px-6 py-4 border-b light:border-gray-200 dark:border-slate-600 flex-shrink-0">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white">
+                            Processed Documents
+                          </h3>
+                          <Button
+                            onClick={loadProcessedDocuments}
+                            disabled={isLoadingDocuments}
+                            variant="outline"
+                            size="sm"
+                          >
+                            {isLoadingDocuments ? (
+                              <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                />
+                              </svg>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Document List */}
+                      <div className="flex-1 overflow-y-auto p-3 lg:p-4">
+                        {isLoadingDocuments ? (
+                          <div className="flex items-center justify-center py-8">
+                            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="ml-2 light:text-gray-600 dark:text-gray-400">
+                              Loading documents...
+                            </span>
+                          </div>
+                        ) : processedDocuments.length === 0 ? (
+                          <div className="text-center py-8">
+                            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <svg
+                                className="w-6 h-6 text-gray-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                              </svg>
+                            </div>
+                            <h4 className="text-sm font-medium light:text-gray-900 dark:text-white mb-2">
+                              No documents yet
+                            </h4>
+                            <p className="text-xs light:text-gray-600 dark:text-gray-400">
+                              Process documents using "Ask Questions on
+                              Document" to see them here
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {processedDocuments.map((doc) => (
+                              <div
+                                key={doc.id}
+                                onClick={() => {
+                                  setSelectedDocument(doc);
+                                  setChatMessages([]);
+                                }}
+                                className={`p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                                  selectedDocument?.id === doc.id
+                                    ? "border-blue-500 light:bg-blue-50 dark:bg-blue-900/20 hover:bg-accent"
+                                    : "border-gray-200 dark:border-slate-600 light:bg-gray-50 dark:bg-slate-700 hover:bg-accent"
+                                }`}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <svg
+                                      className="w-4 h-4 text-white"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                      />
+                                    </svg>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-medium light:text-gray-900 dark:text-white truncate">
+                                      {doc.title}
+                                    </h4>
+                                    <p className="text-xs light:text-gray-500 dark:text-gray-400 truncate">
+                                      {doc.chunkCount} chunks
+                                    </p>
+                                    <p className="text-xs light:text-gray-400 dark:text-gray-500">
+                                      {new Date(
+                                        doc.createdAt
+                                      ).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Conversation History - 15% on large screens, full width on mobile */}
+                </div>
+              </div>
             ) : (
               <>
                 {/* Hero Section */}
@@ -280,47 +1229,47 @@ export default function Page() {
                               Extract Markdown
                             </h3>
                             <p className="text-sm light:text-gray-600 dark:text-gray-400">
-                              Extract text from PDF and convert to markdown
-                              format
+                              Extract text from PDF, convert to markdown, and
+                              save to cloud storage
                             </p>
                           </div>
                         </div>
                         <Button
                           type="button"
                           onClick={async () => {
-                            setIsExtracting(true);
+                            setIsExtractingMarkdown(true);
                             setResult(null);
                             setExtractedMarkdown(null);
                             try {
-                              const parseRes = await parseDocumentFromUrl(
+                              const extractRes = await extractMarkdownOnly(
                                 uploadedUrl
                               );
-                              setResult(parseRes);
-                              if (parseRes.success) {
-                                setExtractedMarkdown(parseRes.text || "");
-                                toast.success(
-                                  "Markdown extracted successfully!",
-                                  {
-                                    description:
-                                      "Text has been converted to markdown format",
-                                    duration: 3000,
-                                  }
-                                );
+                              setResult(extractRes);
+                              if (extractRes.success) {
+                                setExtractedMarkdown(extractRes.text || "");
+                                toast.success("Markdown extracted and saved!", {
+                                  description:
+                                    "Markdown file has been saved to Vercel Blob",
+                                  duration: 3000,
+                                });
+                                // Refresh the markdown files list
+                                loadMarkdownFiles();
                               } else {
                                 toast.error("Extraction failed", {
                                   description:
-                                    parseRes.error || "Failed to extract text",
+                                    extractRes.error ||
+                                    "Failed to extract markdown",
                                   duration: 4000,
                                 });
                               }
                             } finally {
-                              setIsExtracting(false);
+                              setIsExtractingMarkdown(false);
                             }
                           }}
-                          disabled={isExtracting || isStoring}
+                          disabled={isExtractingMarkdown || isStoring}
                           className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isExtracting ? (
+                          {isExtractingMarkdown ? (
                             <div className="flex items-center space-x-2">
                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                               <span>Extracting...</span>
@@ -366,11 +1315,11 @@ export default function Page() {
                           </div>
                           <div>
                             <h3 className="text-xl font-semibold light:text-gray-900 dark:text-white">
-                              Extract & Store in Qdrant
+                              Ask Questions on Document
                             </h3>
                             <p className="text-sm light:text-gray-600 dark:text-gray-400">
-                              Extract text, chunk it, and store in Qdrant for
-                              RAG implementation
+                              Process your document and enable intelligent
+                              question-answering
                             </p>
                           </div>
                         </div>
@@ -381,42 +1330,30 @@ export default function Page() {
                             setResult(null);
                             setExtractedMarkdown(null);
                             try {
-                              const parseRes = await parseDocumentFromUrl(
+                              const processRes = await processDocumentForQdrant(
                                 uploadedUrl
                               );
-                              if (!parseRes.success || !parseRes.text) {
-                                setResult(parseRes);
-                                toast.error("Extraction failed", {
-                                  description:
-                                    parseRes.error || "Failed to extract text",
-                                  duration: 4000,
-                                });
-                                return;
-                              }
-                              const storeRes = await storeMarkdownInQdrant({
-                                markdown: parseRes.text,
-                                sourceUrl: uploadedUrl,
-                              });
-                              if (storeRes.success) {
+                              if (processRes.success) {
                                 setResult({
                                   success: true,
-                                  text: `Successfully stored ${storeRes.points} chunks in Qdrant collection "${storeRes.collection}"`,
+                                  text: `Document successfully processed and ready for questions!\n\n${processRes.message}\n\nYou can now go to the "Chat with Docs" section to ask questions about this document.`,
                                   sourceUrl: uploadedUrl,
-                                  extractionDate: new Date().toISOString(),
+                                  extractionDate: processRes.processingDate,
                                 });
-                                toast.success("Document stored in Qdrant!", {
-                                  description: `${storeRes.points} chunks stored in collection "${storeRes.collection}"`,
+                                toast.success("Document ready for questions!", {
+                                  description:
+                                    "Go to Chat with Docs section to ask questions",
                                   duration: 4000,
                                 });
                               } else {
                                 setResult({
                                   success: false,
-                                  error: storeRes.error,
+                                  error: processRes.error,
                                 });
-                                toast.error("Storage failed", {
+                                toast.error("Processing failed", {
                                   description:
-                                    storeRes.error ||
-                                    "Failed to store in Qdrant",
+                                    processRes.error ||
+                                    "Failed to process document",
                                   duration: 4000,
                                 });
                               }
@@ -447,7 +1384,7 @@ export default function Page() {
                                   d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
                                 />
                               </svg>
-                              <span>Extract & Store in Qdrant</span>
+                              <span>Ask Questions on Document</span>
                             </div>
                           )}
                         </Button>
@@ -522,7 +1459,7 @@ export default function Page() {
                   <div className="mt-12">
                     {result.success ? (
                       <div className="space-y-6">
-                        <div className="light:bg-gradient-to-r light:from-green-50 light:to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-6 shadow-lg">
+                        {/* <div className="light:bg-gradient-to-r light:from-green-50 light:to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-6 shadow-lg">
                           <div className="flex items-start space-x-4">
                             <div className="flex-shrink-0">
                               <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
@@ -561,9 +1498,9 @@ export default function Page() {
                               </div>
                             </div>
                           </div>
-                        </div>
+                        </div> */}
 
-                        {/* Extracted Text Display */}
+                        {/* Result Display */}
                         <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
                           <div className="light:bg-gradient-to-r light:from-slate-50 light:to-gray-50 dark:from-slate-700 dark:to-slate-600 px-6 py-4 border-b border-gray-200 dark:border-slate-600">
                             <div className="flex items-center space-x-3">
@@ -584,7 +1521,11 @@ export default function Page() {
                               </div>
                               <div>
                                 <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white">
-                                  Extracted Content
+                                  {result.text?.includes(
+                                    "Document successfully processed and ready for questions"
+                                  )
+                                    ? "Document Ready for Questions"
+                                    : "Extracted Content"}
                                 </h3>
                                 {result.sourceUrl && (
                                   <p className="text-sm light:text-gray-600 dark:text-gray-400">
@@ -595,11 +1536,66 @@ export default function Page() {
                             </div>
                           </div>
                           <div className="p-6">
-                            <div className="light:bg-slate-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
-                              <pre className="whitespace-pre-wrap text-sm leading-relaxed font-mono light:text-gray-800 dark:text-gray-200 p-4 overflow-auto max-h-96">
-                                {result.text}
-                              </pre>
-                            </div>
+                            {result.text?.includes(
+                              "Document successfully processed and ready for questions"
+                            ) ? (
+                              <div className="text-center py-8">
+                                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                  <svg
+                                    className="w-8 h-8 text-green-600 dark:text-green-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M5 13l4 4L19 7"
+                                    />
+                                  </svg>
+                                </div>
+                                <h4 className="text-xl font-semibold light:text-gray-900 dark:text-white mb-4">
+                                  Document Successfully Processed!
+                                </h4>
+                                <p className="light:text-gray-600 dark:text-gray-400 mb-6 max-w-2xl mx-auto">
+                                  Your document has been processed and is now
+                                  ready for question-answering. You can ask
+                                  questions about this document in the Chat with
+                                  Docs section.
+                                </p>
+                                {/* <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                                  <p className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+                                    {result.text.split("\n\n")[1]}
+                                  </p>
+                                </div> */}
+                                <Button
+                                  onClick={() => setActiveSection("chat")}
+                                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-all duration-200"
+                                >
+                                  <svg
+                                    className="w-5 h-5 mr-2"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                                    />
+                                  </svg>
+                                  Go to Chat with Docs
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="light:bg-slate-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
+                                <pre className="whitespace-pre-wrap text-sm leading-relaxed font-mono light:text-gray-800 dark:text-gray-200 p-4 overflow-auto max-h-96">
+                                  {result.text}
+                                </pre>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -641,6 +1637,109 @@ export default function Page() {
           </div>
         </div>
       </SidebarInset>
+
+      {/* Preview Sheet */}
+      <Sheet open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <SheetContent className="w-full sm:max-w-2xl">
+          <SheetHeader>
+            <SheetTitle>
+              {previewFile
+                ? previewFile.sourceFileName || previewFile.fileName
+                : "File Preview"}
+            </SheetTitle>
+            <SheetDescription>
+              {previewFile?.sourceUrl && `Source: ${previewFile.sourceUrl}`}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-6 h-full">
+            {isLoadingPreview ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span className="ml-2 text-gray-600 dark:text-gray-400">
+                  Loading content...
+                </span>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col">
+                <div className="flex-1 overflow-auto">
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
+                    <pre className="whitespace-pre-wrap text-sm light:bg-gray-50 dark:bg-gray-800 p-4 rounded-lg overflow-auto max-h-100">
+                      {previewContent}
+                    </pre>
+                  </div>
+                </div>
+
+                {previewFile && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <p>Size: {(previewFile.size / 1024).toFixed(1)} KB</p>
+                        <p>
+                          Created:{" "}
+                          {new Date(previewFile.uploadedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            window.open(previewFile.downloadUrl, "_blank")
+                          }
+                        >
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                            />
+                          </svg>
+                          Download
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (previewFile) {
+                              handleDeleteMarkdownFile(
+                                previewFile.url,
+                                previewFile.fileName
+                              );
+                              setIsPreviewOpen(false);
+                            }
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        >
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </SidebarProvider>
   );
 }

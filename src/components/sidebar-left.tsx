@@ -264,9 +264,17 @@ export function SidebarLeft({
                       <span>Upload & Manage</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => handleSectionChange("files")}
+                      className={activeSection === "files" ? "bg-accent" : ""}
+                    >
+                      <File className="h-4 w-4" />
+                      <span>Markdown Files</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
-
-                {/* File List */}
+                {/* File List
                 <div className="mt-2 space-y-2">
                   {uploadedFiles.map((file) => (
                     <div
@@ -315,14 +323,14 @@ export function SidebarLeft({
                       </div>
                     </div>
                   ))}
-                </div>
+                </div> */}
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <Separator className="my-2" />
+            <Separator className="my-1" />
 
             {/* Extracted Text / Data Section */}
-            <SidebarGroup>
+            {/* <SidebarGroup>
               <SidebarGroupLabel>Extracted Data</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -339,7 +347,6 @@ export function SidebarLeft({
                   </SidebarMenuItem>
                 </SidebarMenu>
 
-                {/* Document Metadata */}
                 {selectedFile && (
                   <div className="mt-2">
                     <div className="p-3 bg-muted rounded-lg">
@@ -408,9 +415,9 @@ export function SidebarLeft({
                   </div>
                 )}
               </SidebarGroupContent>
-            </SidebarGroup>
+            </SidebarGroup> */}
 
-            <Separator className="my-2" />
+            <Separator className="my-1" />
 
             {/* Ask AI / Chat Section */}
             <SidebarGroup>
@@ -426,39 +433,7 @@ export function SidebarLeft({
                       <span>Chat with Docs</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => handleSectionChange("history")}
-                      className={activeSection === "history" ? "bg-accent" : ""}
-                    >
-                      <History className="h-4 w-4" />
-                      <span>Query History</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
                 </SidebarMenu>
-
-                {/* Chat History */}
-                {activeSection === "history" && (
-                  <div className="mt-2 space-y-1">
-                    {chatHistory
-                      .filter(
-                        (chat) => !selectedFile || chat.fileId === selectedFile
-                      )
-                      .map((chat) => (
-                        <div
-                          key={chat.id}
-                          className="p-2 rounded-lg border text-xs"
-                        >
-                          <p className="font-medium truncate">
-                            {chat.question}
-                          </p>
-                          <p className="text-muted-foreground truncate">
-                            {chat.timestamp}
-                          </p>
-                        </div>
-                      ))}
-                  </div>
-                )}
               </SidebarGroupContent>
             </SidebarGroup>
 
