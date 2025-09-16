@@ -31,6 +31,21 @@ import {
   ProcessedDocument,
 } from "@/actions/getProcessedDocuments";
 import { queryDocument, ChatMessage } from "@/actions/queryDocument";
+import { createFile, getFiles, updateFile } from "@/actions/db-files";
+import {
+  createConversation,
+  getConversations,
+  updateConversation,
+} from "@/actions/db-conversations";
+import {
+  createMessage,
+  getMessagesByConversationId,
+} from "@/actions/db-messages";
+import {
+  createProcessedDocument,
+  getProcessedDocuments as getDbProcessedDocuments,
+} from "@/actions/db-processed-documents";
+import { deleteProcessedDocumentWithQdrant } from "@/actions/deleteProcessedDocumentWithQdrant";
 
 // Export the Conversation interface for use in other components
 export interface Conversation {
@@ -100,6 +115,11 @@ export default function Page() {
   const [currentConversationId, setCurrentConversationId] = useState<
     string | null
   >(null);
+  const [dbFiles, setDbFiles] = useState<any[]>([]);
+  const [dbProcessedDocuments, setDbProcessedDocuments] = useState<any[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [pdfFiles, setPdfFiles] = useState<any[]>([]);
+  const [isLoadingPdfFiles, setIsLoadingPdfFiles] = useState(false);
 
   // Generate conversation title from first question
   const generateConversationTitle = (question: string): string => {
@@ -111,31 +131,145 @@ export default function Page() {
     return question.substring(0, maxLength).trim() + "...";
   };
 
-  // Save conversation to localStorage
-  const saveConversation = (conversation: Conversation) => {
-    const savedConversations = JSON.parse(
-      localStorage.getItem("conversations") || "[]"
-    );
-    const existingIndex = savedConversations.findIndex(
-      (c: Conversation) => c.id === conversation.id
-    );
+  // Save conversation to database
+  const saveConversation = async (
+    conversation: Conversation,
+    fileId?: string | null
+  ) => {
+    try {
+      console.log(
+        "Saving conversation:",
+        conversation.id,
+        "with",
+        conversation.messages.length,
+        "messages"
+      );
 
-    if (existingIndex >= 0) {
-      savedConversations[existingIndex] = conversation;
-    } else {
-      savedConversations.unshift(conversation); // Add to beginning
+      console.log(
+        "Using fileId:",
+        fileId,
+        "for conversation:",
+        conversation.id
+      );
+
+      // Check if conversation already exists
+      const existingConversation = conversations.find(
+        (c) => c.id === conversation.id
+      );
+
+      if (existingConversation) {
+        console.log("Updating existing conversation");
+        // Update existing conversation
+        await updateConversation(conversation.id, {
+          title: conversation.title,
+          fileId: fileId || undefined,
+        });
+      } else {
+        console.log("Creating new conversation");
+        // Create new conversation
+        const convResult = await createConversation({
+          id: conversation.id,
+          title: conversation.title,
+          fileId: fileId || undefined,
+        });
+
+        if (!convResult.success) {
+          console.error("Failed to create conversation:", convResult.error);
+          return;
+        }
+      }
+
+      // Get existing messages for this conversation
+      const existingMessagesResult = await getMessagesByConversationId(
+        conversation.id
+      );
+      const existingMessages = existingMessagesResult.success
+        ? existingMessagesResult.messages
+        : [];
+      console.log(
+        "Existing messages:",
+        existingMessages?.length || 0,
+        "New messages:",
+        conversation.messages.length
+      );
+
+      // Save all messages (let the database handle duplicates)
+      let savedCount = 0;
+      for (let i = 0; i < conversation.messages.length; i++) {
+        const message = conversation.messages[i];
+        // Use a more unique ID that includes the message content hash
+        const messageId = `${conversation.id}_${i}_${message.timestamp.replace(
+          /[:.]/g,
+          "_"
+        )}`;
+
+        try {
+          const messageResult = await createMessage({
+            id: messageId,
+            conversationId: conversation.id,
+            role: message.role,
+            content: message.content,
+          });
+          if (messageResult.success) {
+            savedCount++;
+            console.log("Saved message:", messageId, "Role:", message.role);
+          } else {
+            console.error("Failed to save message:", messageResult.error);
+          }
+        } catch (error) {
+          // If message already exists, that's okay
+          if (
+            error instanceof Error &&
+            (error.message.includes("Unique constraint") ||
+              error.message.includes("duplicate"))
+          ) {
+            console.log("Message already exists, skipping:", messageId);
+          } else {
+            console.error("Error saving message:", error);
+          }
+        }
+      }
+      console.log("Saved", savedCount, "new messages");
+
+      // Reload conversations and trigger overview refresh
+      await loadConversations();
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (error) {
+      console.error("Error saving conversation:", error);
     }
-
-    localStorage.setItem("conversations", JSON.stringify(savedConversations));
-    setConversations(savedConversations);
   };
 
-  // Load conversations from localStorage
-  const loadConversations = () => {
-    const savedConversations = JSON.parse(
-      localStorage.getItem("conversations") || "[]"
-    );
-    setConversations(savedConversations);
+  // Load conversations from database
+  const loadConversations = async () => {
+    try {
+      console.log("Loading conversations...");
+      const result = await getConversations();
+      console.log("Conversations result:", result);
+
+      if (result.success && result.conversations) {
+        const formattedConversations = result.conversations.map(
+          (conv: any) => ({
+            id: conv.id,
+            title: conv.title,
+            documentId: conv.fileId || "",
+            documentTitle:
+              conv.files?.sourceFileName || conv.files?.fileName || "Unknown",
+            messages: (conv.messages || []).map((msg: any) => ({
+              role: msg.role,
+              content: msg.content,
+              timestamp: msg.createdAt,
+            })),
+            createdAt: conv.createdAt,
+            updatedAt: conv.updatedAt,
+          })
+        );
+        console.log("Formatted conversations:", formattedConversations.length);
+        console.log("Sample conversation:", formattedConversations[0]);
+        setConversations(formattedConversations);
+      }
+    } catch (error) {
+      console.error("Error loading conversations:", error);
+    }
   };
 
   // Start new conversation
@@ -146,22 +280,169 @@ export default function Page() {
   };
 
   // Load conversation
-  const loadConversation = (conversationId: string) => {
-    const conversation = conversations.find((c) => c.id === conversationId);
-    if (conversation) {
-      setCurrentConversationId(conversationId);
-      setChatMessages(conversation.messages);
+  const loadConversation = async (conversationId: string) => {
+    try {
+      const result = await getMessagesByConversationId(conversationId);
+      if (result.success && result.messages) {
+        const messages = result.messages.map((msg: any) => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.createdAt,
+        }));
+        setCurrentConversationId(conversationId);
+        setChatMessages(messages);
 
-      // Find and set the document
-      const document = processedDocuments.find(
-        (d) => d.id === conversation.documentId
-      );
-      if (document) {
-        setSelectedDocument(document);
+        // Find the conversation to get document info
+        const conversation = conversations.find((c) => c.id === conversationId);
+        if (conversation) {
+          setSelectedDocument({
+            id: conversation.documentId,
+            title: conversation.documentTitle,
+            sourceUrl: "",
+            createdAt: "",
+            chunkCount: 0,
+          });
+        }
+
+        // Switch to chat section
+        setActiveSection("chat");
       }
+    } catch (error) {
+      console.error("Error loading conversation:", error);
+    }
+  };
 
-      // Switch to chat section
-      setActiveSection("chat");
+  // Load database files
+  const loadDbFiles = async () => {
+    try {
+      console.log("Loading database files...");
+      const result = await getFiles();
+      console.log("Files result:", result);
+      if (result.success && result.files) {
+        setDbFiles(result.files);
+        console.log("Loaded", result.files.length, "files from database");
+      }
+    } catch (error) {
+      console.error("Error loading files:", error);
+    }
+  };
+
+  // Load database processed documents
+  const loadDbProcessedDocuments = async () => {
+    try {
+      const result = await getDbProcessedDocuments();
+      if (result.success && result.processedDocuments) {
+        setDbProcessedDocuments(result.processedDocuments);
+      }
+    } catch (error) {
+      console.error("Error loading processed documents:", error);
+    }
+  };
+
+  // Load PDF files from Vercel Blob and check markdown status
+  const loadPdfFiles = async () => {
+    setIsLoadingPdfFiles(true);
+    try {
+      // Get all files from database that are PDFs
+      const pdfFilesFromDb = dbFiles.filter(
+        (file) => file.fileType === "application/pdf"
+      );
+
+      // Check which ones have corresponding markdown files
+      const pdfFilesWithStatus = await Promise.all(
+        pdfFilesFromDb.map(async (file) => {
+          // Check if markdown file exists by looking for it in markdown files
+          const hasMarkdown = markdownFiles.some(
+            (mdFile) =>
+              mdFile.sourceFileName === file.fileName ||
+              mdFile.fileName === file.fileName ||
+              mdFile.sourceUrl === file.url
+          );
+
+          return {
+            ...file,
+            hasMarkdown,
+            status: hasMarkdown ? "SUCCESS" : "PENDING",
+          };
+        })
+      );
+
+      setPdfFiles(pdfFilesWithStatus);
+      console.log("Loaded PDF files with status:", pdfFilesWithStatus);
+    } catch (error) {
+      console.error("Error loading PDF files:", error);
+    } finally {
+      setIsLoadingPdfFiles(false);
+    }
+  };
+
+  // Handle PDF parsing to generate markdown
+  const handleParsePdf = async (pdfFile: any) => {
+    try {
+      setIsExtractingMarkdown(true);
+
+      // Parse the PDF to generate markdown
+      const result = await extractMarkdownOnly(pdfFile.url);
+
+      if (result.success) {
+        // Reload markdown files and PDF files to update status
+        await loadMarkdownFiles();
+        await loadPdfFiles();
+
+        toast.success("PDF parsed successfully!", {
+          description: "Markdown file has been generated",
+        });
+      } else {
+        toast.error("Failed to parse PDF", {
+          description: result.error || "Unknown error occurred",
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to parse PDF", {
+        description: "An unexpected error occurred",
+      });
+    } finally {
+      setIsExtractingMarkdown(false);
+    }
+  };
+
+  // Delete processed document
+  const handleDeleteProcessedDocument = async (
+    documentId: string,
+    sourceUrl: string,
+    documentTitle: string
+  ) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete "${documentTitle}"? This will permanently remove the document and all related chat history.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const result = await deleteProcessedDocumentWithQdrant(
+        documentId,
+        sourceUrl
+      );
+      if (result.success) {
+        // Reload processed documents and conversations
+        await loadProcessedDocuments();
+        await loadConversations();
+        // Trigger refresh for Overview page
+        setRefreshTrigger((prev) => prev + 1);
+        toast.success("Document deleted successfully", {
+          description: result.message,
+        });
+      } else {
+        toast.error("Failed to delete document", {
+          description: result.error,
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to delete document", {
+        description: "An unexpected error occurred",
+      });
     }
   };
 
@@ -192,8 +473,35 @@ export default function Page() {
       const result = await deleteMarkdownFile(url);
       if (result.success) {
         setMarkdownFiles((prev) => prev.filter((file) => file.url !== url));
+
+        // Delete related chat history
+        const relatedConversations = conversations.filter(
+          (conv) =>
+            conv.documentTitle === fileName ||
+            conv.documentTitle.includes(fileName.replace(".md", ""))
+        );
+
+        for (const conversation of relatedConversations) {
+          try {
+            await deleteProcessedDocumentWithQdrant(
+              conversation.documentId,
+              conversation.documentTitle
+            );
+            console.log(
+              "Deleted chat history for conversation:",
+              conversation.id
+            );
+          } catch (error) {
+            console.error("Error deleting chat history:", error);
+          }
+        }
+
+        // Reload conversations and trigger refresh
+        await loadConversations();
+        setRefreshTrigger((prev) => prev + 1);
+
         toast.success("File deleted successfully", {
-          description: `${fileName} has been removed`,
+          description: `${fileName} and related chat history have been removed`,
         });
       } else {
         toast.error("Failed to delete file", {
@@ -289,6 +597,23 @@ export default function Page() {
         const conversationId = currentConversationId || `conv_${Date.now()}`;
         const isNewConversation = !currentConversationId;
 
+        // Find the corresponding file in the database
+        const correspondingFile = dbFiles.find(
+          (file) =>
+            file.sourceUrl === selectedDocument.sourceUrl ||
+            file.url === selectedDocument.sourceUrl
+        );
+
+        console.log(
+          "Looking for file with sourceUrl:",
+          selectedDocument.sourceUrl
+        );
+        console.log(
+          "Available files:",
+          dbFiles.map((f) => ({ id: f.id, sourceUrl: f.sourceUrl, url: f.url }))
+        );
+        console.log("Found corresponding file:", correspondingFile);
+
         const conversation: Conversation = {
           id: conversationId,
           title: isNewConversation
@@ -305,7 +630,8 @@ export default function Page() {
           updatedAt: new Date().toISOString(),
         };
 
-        saveConversation(conversation);
+        // Pass the fileId to saveConversation (null if no file found)
+        await saveConversation(conversation, correspondingFile?.id || null);
         setCurrentConversationId(conversationId);
       } else {
         toast.error("Failed to get answer", {
@@ -325,7 +651,16 @@ export default function Page() {
   useEffect(() => {
     loadMarkdownFiles();
     loadConversations();
+    loadDbFiles();
+    loadDbProcessedDocuments();
   }, []);
+
+  // Load PDF files when dbFiles or markdownFiles change
+  useEffect(() => {
+    if (dbFiles.length > 0) {
+      loadPdfFiles();
+    }
+  }, [dbFiles, markdownFiles]);
 
   // Load processed documents when chat section is active
   useEffect(() => {
@@ -341,25 +676,6 @@ export default function Page() {
       chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
     }
   }, [chatMessages]);
-
-  const handleSubmit = async () => {
-    setIsExtracting(true);
-    setResult(null);
-
-    try {
-      const documentUrl =
-        "https://dwylojmkbggcdvus.public.blob.vercel-storage.com/shivaji.pdf";
-      const parseResult = await parseDocumentFromUrl(documentUrl);
-      setResult(parseResult);
-    } catch (error) {
-      setResult({
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    } finally {
-      setIsExtracting(false);
-    }
-  };
 
   return (
     <SidebarProvider>
@@ -395,7 +711,7 @@ export default function Page() {
         >
           <div className="max-w-6xl mx-auto px-6 py-8">
             {activeSection === "dashboard" ? (
-              <OverviewContent />
+              <OverviewContent refreshTrigger={refreshTrigger} />
             ) : activeSection === "files" ? (
               <div className="space-y-6">
                 <div className="text-center mb-8">
@@ -411,8 +727,9 @@ export default function Page() {
                   </p>
                 </div>
 
-                {/* Files List */}
-                <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadChat with Documentsw-xl border border-gray-200 dark:border-slate-700 p-6">
+                {/* Markdown Files Section */}
+                {/* Markdown Files Section */}
+                <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 p-6">
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="text-xl font-semibold light:text-gray-900 dark:text-white">
                       Markdown Files
@@ -596,6 +913,209 @@ export default function Page() {
                               </svg>
                               <span className="ml-1">Delete</span>
                             </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : activeSection === "pdf-files" ? (
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold light:text-gray-900 dark:text-white mb-4">
+                    PDF Files
+                  </h2>
+                  <p className="text-lg light:text-gray-600 dark:text-gray-400">
+                    Manage your uploaded PDF files and their parsing status
+                  </p>
+                  <p className="text-md light:text-gray-600 dark:text-gray-400">
+                    Upload PDF files and parse them to generate markdown files.
+                  </p>
+                </div>
+
+                {/* PDF Files Section */}
+                <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-semibold light:text-gray-900 dark:text-white">
+                      PDF Files
+                    </h3>
+                    <Button
+                      onClick={loadPdfFiles}
+                      disabled={isLoadingPdfFiles}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {isLoadingPdfFiles ? (
+                        <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                          />
+                        </svg>
+                      )}
+                      <span className="ml-2">Refresh</span>
+                    </Button>
+                  </div>
+
+                  {isLoadingPdfFiles ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="ml-2 light:text-gray-600 dark:text-gray-400">
+                        Loading PDF files...
+                      </span>
+                    </div>
+                  ) : pdfFiles.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg
+                          className="w-8 h-8 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                          />
+                        </svg>
+                      </div>
+                      <h4 className="text-lg font-medium light:text-gray-900 dark:text-white mb-2">
+                        No PDF files yet
+                      </h4>
+                      <p className="light:text-gray-600 dark:text-gray-400">
+                        Upload some PDF files to see them here
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {pdfFiles.map((file) => (
+                        <div
+                          key={file.id}
+                          className="flex items-center justify-between p-4 light:bg-gray-50 dark:bg-slate-700 rounded-lg border light:border-gray-200 dark:border-slate-600 light:hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <svg
+                                className="w-5 h-5 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                                />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <h4 className="font-medium light:text-gray-900 dark:text-white truncate">
+                                  {file.fileName}
+                                </h4>
+                              </div>
+                              <p className="text-sm light:text-gray-500 dark:text-gray-400 truncate">
+                                PDF Document
+                              </p>
+                              <div className="flex items-center space-x-2 text-xs light:text-gray-600 dark:text-gray-400 mt-1">
+                                <span>
+                                  {file.size
+                                    ? `${(file.size / 1024).toFixed(1)} KB`
+                                    : "Unknown size"}
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  {new Date(
+                                    file.uploadedAt
+                                  ).toLocaleDateString()}
+                                </span>
+                                <span>•</span>
+                                <span className="flex items-center">
+                                  <div
+                                    className={`w-2 h-2 rounded-full mr-1 ${
+                                      file.status === "SUCCESS"
+                                        ? "bg-green-500"
+                                        : "bg-yellow-500"
+                                    }`}
+                                  ></div>
+                                  {file.status}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 flex-shrink-0">
+                            {file.status === "SUCCESS" ? (
+                              <div className="flex items-center space-x-2">
+                                <div className="px-3 py-1 bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
+                                  ✓ Markdown Generated
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    window.open(file.url, "_blank")
+                                  }
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                    />
+                                  </svg>
+                                  <span className="ml-1">View</span>
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                onClick={() => handleParsePdf(file)}
+                                disabled={isExtractingMarkdown}
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                              >
+                                {isExtractingMarkdown ? (
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                    />
+                                  </svg>
+                                )}
+                                <span className="ml-1">
+                                  {isExtractingMarkdown
+                                    ? "Parsing..."
+                                    : "Parse"}
+                                </span>
+                              </Button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -989,20 +1509,66 @@ export default function Page() {
                             {processedDocuments.map((doc) => (
                               <div
                                 key={doc.id}
-                                onClick={() => {
-                                  setSelectedDocument(doc);
-                                  setChatMessages([]);
-                                }}
-                                className={`p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                                className={`p-3 rounded-lg border transition-all duration-200 ${
                                   selectedDocument?.id === doc.id
-                                    ? "border-blue-500 light:bg-blue-50 dark:bg-blue-900/20 hover:bg-accent"
-                                    : "border-gray-200 dark:border-slate-600 light:bg-gray-50 dark:bg-slate-700 hover:bg-accent"
+                                    ? "border-blue-500 light:bg-blue-50 dark:bg-blue-900/20"
+                                    : "border-gray-200 dark:border-slate-600 light:bg-gray-50 dark:bg-slate-700"
                                 }`}
                               >
                                 <div className="flex items-start space-x-3">
-                                  <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <div
+                                    className="flex-1 min-w-0 cursor-pointer"
+                                    onClick={() => {
+                                      setSelectedDocument(doc);
+                                      setChatMessages([]);
+                                    }}
+                                  >
+                                    <div className="flex items-start space-x-3">
+                                      <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                                        <svg
+                                          className="w-4 h-4 text-white"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                          />
+                                        </svg>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <h4 className="text-sm font-medium light:text-gray-900 dark:text-white truncate">
+                                          {doc.title}
+                                        </h4>
+                                        <p className="text-xs light:text-gray-500 dark:text-gray-400 truncate">
+                                          {doc.chunkCount} chunks
+                                        </p>
+                                        <p className="text-xs light:text-gray-400 dark:text-gray-500">
+                                          {new Date(
+                                            doc.createdAt
+                                          ).toLocaleDateString()}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteProcessedDocument(
+                                        doc.id,
+                                        doc.sourceUrl,
+                                        doc.title
+                                      );
+                                    }}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 flex-shrink-0"
+                                  >
                                     <svg
-                                      className="w-4 h-4 text-white"
+                                      className="w-4 h-4"
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
@@ -1011,23 +1577,10 @@ export default function Page() {
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
                                         strokeWidth={2}
-                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                                       />
                                     </svg>
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium light:text-gray-900 dark:text-white truncate">
-                                      {doc.title}
-                                    </h4>
-                                    <p className="text-xs light:text-gray-500 dark:text-gray-400 truncate">
-                                      {doc.chunkCount} chunks
-                                    </p>
-                                    <p className="text-xs light:text-gray-400 dark:text-gray-500">
-                                      {new Date(
-                                        doc.createdAt
-                                      ).toLocaleDateString()}
-                                    </p>
-                                  </div>
+                                  </Button>
                                 </div>
                               </div>
                             ))}
@@ -1054,7 +1607,7 @@ export default function Page() {
 
                   {/* Upload Card */}
                   <div className="max-w-lg mx-auto mb-12">
-                    <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-8">
+                    <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 p-8">
                       <div className="mb-6">
                         <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
                           <svg
@@ -1137,6 +1690,23 @@ export default function Page() {
                                 );
                               }
                               setUploadedUrl(uploadRes.url);
+
+                              // Save file to database
+                              const fileId = `file_${Date.now()}`;
+                              await createFile({
+                                id: fileId,
+                                url: uploadRes.url,
+                                fileName: file.name.replace(".pdf", ""),
+                                fileType: "application/pdf",
+                                pageCount: (uploadRes as any).pageCount || 0,
+                                size: file.size,
+                              });
+
+                              // Reload database files
+                              await loadDbFiles();
+                              // Trigger refresh for Overview page
+                              setRefreshTrigger((prev) => prev + 1);
+
                               toast.success("PDF uploaded successfully!", {
                                 description:
                                   "Your file is ready for processing",
@@ -1207,7 +1777,7 @@ export default function Page() {
                   {uploadedUrl && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
                       {/* Function 2: Extract Markdown */}
-                      <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-6">
+                      <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl light:border border-gray-200 dark:border-slate-700 p-6">
                         <div className="flex items-center space-x-3 mb-6">
                           <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center">
                             <svg
@@ -1247,6 +1817,26 @@ export default function Page() {
                               setResult(extractRes);
                               if (extractRes.success) {
                                 setExtractedMarkdown(extractRes.text || "");
+
+                                // Update the existing PDF file with page count
+                                // Find the PDF file that was uploaded
+                                const existingPdfFile = dbFiles.find(
+                                  (file) =>
+                                    file.url === uploadedUrl &&
+                                    file.fileType === "application/pdf"
+                                );
+
+                                if (existingPdfFile) {
+                                  await updateFile(existingPdfFile.id, {
+                                    pageCount:
+                                      (extractRes as any).pageCount || 0,
+                                    sourceFileName: extractRes.sourceFileName,
+                                  });
+                                }
+
+                                // Reload database files
+                                await loadDbFiles();
+
                                 toast.success("Markdown extracted and saved!", {
                                   description:
                                     "Markdown file has been saved to Vercel Blob",
@@ -1296,7 +1886,7 @@ export default function Page() {
                       </div>
 
                       {/* Function 3: Extract & Store in Qdrant */}
-                      <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-6">
+                      <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 p-6">
                         <div className="flex items-center space-x-3 mb-6">
                           <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center">
                             <svg
@@ -1340,6 +1930,41 @@ export default function Page() {
                                   sourceUrl: uploadedUrl,
                                   extractionDate: processRes.processingDate,
                                 });
+
+                                // Update the existing PDF file with page count if not already set
+                                const existingPdfFile = dbFiles.find(
+                                  (file) =>
+                                    file.url === uploadedUrl &&
+                                    file.fileType === "application/pdf"
+                                );
+
+                                if (
+                                  existingPdfFile &&
+                                  !existingPdfFile.pageCount
+                                ) {
+                                  await updateFile(existingPdfFile.id, {
+                                    pageCount:
+                                      (processRes as any).pageCount || 0,
+                                  });
+                                }
+
+                                // Save processed document to database
+                                const processedDocId = `processed_${Date.now()}`;
+                                await createProcessedDocument({
+                                  id: processedDocId,
+                                  fileName: "document",
+                                  fileUrl: uploadedUrl,
+                                  chunkCount: processRes.points || 0,
+                                  pageCount: (processRes as any).pageCount || 0,
+                                  sourceUrl: uploadedUrl,
+                                });
+
+                                // Reload processed documents and files
+                                await loadDbProcessedDocuments();
+                                await loadDbFiles();
+                                // Trigger refresh for Overview page
+                                setRefreshTrigger((prev) => prev + 1);
+
                                 toast.success("Document ready for questions!", {
                                   description:
                                     "Go to Chat with Docs section to ask questions",
@@ -1396,7 +2021,7 @@ export default function Page() {
                 {/* PDF Download for Function 2 */}
                 {extractedMarkdown && (
                   <div className="mt-6">
-                    <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-6">
+                    <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div>
                           <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white">
@@ -1501,8 +2126,8 @@ export default function Page() {
                         </div> */}
 
                         {/* Result Display */}
-                        <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-                          <div className="light:bg-gradient-to-r light:from-slate-50 light:to-gray-50 dark:from-slate-700 dark:to-slate-600 px-6 py-4 border-b border-gray-200 dark:border-slate-600">
+                        <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 overflow-hidden">
+                          <div className="light:bg-gradient-to-r light:from-slate-50 light:to-gray-50 dark:from-slate-700 dark:to-slate-600 px-6 py-4 border-b light:border-gray-200 dark:border-slate-600">
                             <div className="flex items-center space-x-3">
                               <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
                                 <svg
@@ -1590,7 +2215,7 @@ export default function Page() {
                                 </Button>
                               </div>
                             ) : (
-                              <div className="light:bg-slate-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
+                              <div className="light:bg-slate-50 dark:bg-slate-900 rounded-lg border light:border-gray-200 dark:border-slate-600 overflow-hidden">
                                 <pre className="whitespace-pre-wrap text-sm leading-relaxed font-mono light:text-gray-800 dark:text-gray-200 p-4 overflow-auto max-h-96">
                                   {result.text}
                                 </pre>
@@ -1671,7 +2296,7 @@ export default function Page() {
                 </div>
 
                 {previewFile && (
-                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="mt-4 pt-4 border-t light:border-gray-200 dark:border-gray-700">
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-gray-600 dark:text-gray-400">
                         <p>Size: {(previewFile.size / 1024).toFixed(1)} KB</p>

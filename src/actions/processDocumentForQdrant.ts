@@ -47,6 +47,7 @@ export async function processDocumentForQdrant(url: string) {
           collection: storeResult.collection,
           sourceUrl: url,
           processingDate: new Date().toISOString(),
+          pageCount: documents.length, // Number of documents = number of pages
         };
       } else {
         console.error("Failed to store in Qdrant:", storeResult.error);

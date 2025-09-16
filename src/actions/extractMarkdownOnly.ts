@@ -67,6 +67,7 @@ ${extractedText}`;
         sourceUrl: url,
         extractionDate: extractionDate,
         sourceFileName: uploadResult.sourceFileName,
+        pageCount: documents.length, // Number of documents = number of pages
       };
     } else {
       console.log("No content was returned. Check the URL and file type.");

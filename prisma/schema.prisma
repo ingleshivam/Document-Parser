@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Favorite {
+  userId      Int
+  recipeId    Int
+  isFavourite Int?
+  Recipe      Recipe @relation(fields: [recipeId], references: [recipeId])
+  User        User   @relation(fields: [userId], references: [userId])
+
+  @@id([userId, recipeId])
+}
+
+model Image {
+  imageId     Int      @id @default(autoincrement())
+  imageUrl    String
+  description String?
+  createdAt   DateTime @default(now())
+  recipeId    Int?
+  Recipe      Recipe?  @relation(fields: [recipeId], references: [recipeId])
+}
+
+model Ingredient {
+  ingredientId     Int                @id @default(autoincrement())
+  name             String             @unique
+  description      String?
+  RecipeIngredient RecipeIngredient[]
+}
+
+model Instructions {
+  instructionId      Int                  @id @default(autoincrement())
+  description        String
+  RecipeInstructions RecipeInstructions[]
+}
+
+model NutritionInfo {
+  nutritionId         Int                   @id @default(autoincrement())
+  calorie             String?
+  fat                 String?
+  carbs               String?
+  protein             String?
+  sugar               String?
+  fiber               String?
+  RecipeNutritionInfo RecipeNutritionInfo[]
+}
+
+model Recipe {
+  recipeId            Int                   @id @default(autoincrement())
+  title               String
+  description         String?
+  cookingTime         Int?
+  servingSize         Int?
+  categoryId          Int
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  userId              Int?
+  approveStatus       String
+  approvedDate        DateTime?
+  difficulty          Int?
+  isSavedAsDraft      Int
+  prepTime            Int?
+  Favorite            Favorite[]
+  Image               Image[]
+  User                User?                 @relation(fields: [userId], references: [userId])
+  RecipeIngredient    RecipeIngredient[]
+  RecipeInstructions  RecipeInstructions[]
+  RecipeNutritionInfo RecipeNutritionInfo[]
+  RecipeTag           RecipeTag[]
+  Review              Review[]
+}
+
+model RecipeIngredient {
+  recipeId     Int
+  ingredientId Int
+  quantity     String
+  Ingredient   Ingredient @relation(fields: [ingredientId], references: [ingredientId])
+  Recipe       Recipe     @relation(fields: [recipeId], references: [recipeId])
+
+  @@id([recipeId, ingredientId])
+}
+
+model RecipeInstructions {
+  recipeId      Int
+  instructionId Int
+  Instructions  Instructions @relation(fields: [instructionId], references: [instructionId])
+  Recipe        Recipe       @relation(fields: [recipeId], references: [recipeId])
+
+  @@id([recipeId, instructionId])
+}
+
+model RecipeNutritionInfo {
+  recipeId      Int
+  nutritionId   Int
+  NutritionInfo NutritionInfo @relation(fields: [nutritionId], references: [nutritionId])
+  Recipe        Recipe        @relation(fields: [recipeId], references: [recipeId])
+
+  @@id([recipeId, nutritionId])
+}
+
+model RecipeTag {
+  recipeId Int
+  tagId    Int
+  Recipe   Recipe @relation(fields: [recipeId], references: [recipeId])
+  Tag      Tag    @relation(fields: [tagId], references: [tagId])
+
+  @@id([recipeId, tagId])
+}
+
+model Review {
+  reviewId   Int      @id @default(autoincrement())
+  rating     Int
+  reviewText String?
+  createdAt  DateTime @default(now())
+  userId     Int
+  recipeId   Int
+  Recipe     Recipe   @relation(fields: [recipeId], references: [recipeId])
+  User       User     @relation(fields: [userId], references: [userId])
+}
+
+model Tag {
+  tagId     Int         @id @default(autoincrement())
+  name      String      @unique
+  RecipeTag RecipeTag[]
+}
+
+model User {
+  userId       Int        @id @default(autoincrement())
+  email        String     @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime
+  role         String?
+  isVerified   Int?
+  Favorite     Favorite[]
+  Recipe       Recipe[]
+  Review       Review[]
+  userOtp      userOtp[]
+}
+
+model conversations {
+  id        String     @id
+  title     String
+  fileId    String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime
+  files     files?     @relation(fields: [fileId], references: [id])
+  messages  messages[]
+}
+
+model files {
+  id             String          @id
+  url            String          @unique
+  fileName       String
+  fileType       String
+  pageCount      Int?
+  size           Int?
+  sourceUrl      String?
+  sourceFileName String?
+  uploadedAt     DateTime        @default(now())
+  updatedAt      DateTime
+  conversations  conversations[]
+}
+
+model messages {
+  id             String        @id
+  conversationId String
+  role           String
+  content        String
+  createdAt      DateTime      @default(now())
+  conversations  conversations @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model processed_documents {
+  id             String   @id
+  fileName       String
+  fileUrl        String
+  chunkCount     Int
+  pageCount      Int?
+  sourceUrl      String?
+  sourceFileName String?
+  processedAt    DateTime @default(now())
+}
+
+model userOtp {
+  id                  Int      @id @default(autoincrement())
+  otp                 String   @unique
+  isUsed              Int
+  generatedTimestamp  DateTime
+  expirationTimestamp DateTime
+  userId              Int
+  User                User     @relation(fields: [userId], references: [userId])
+}

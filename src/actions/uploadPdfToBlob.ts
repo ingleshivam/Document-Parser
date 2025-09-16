@@ -21,6 +21,7 @@ export async function uploadPdfToBlob(file: File) {
       success: true,
       url,
       fileName,
+      pageCount: 0, // Default page count, will be updated when processing
     } as const;
   } catch (error) {
     return {

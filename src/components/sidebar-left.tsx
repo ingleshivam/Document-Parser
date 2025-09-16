@@ -273,6 +273,17 @@ export function SidebarLeft({
                       <span>Markdown Files</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => handleSectionChange("pdf-files")}
+                      className={
+                        activeSection === "pdf-files" ? "bg-accent" : ""
+                      }
+                    >
+                      <FileText className="h-4 w-4" />
+                      <span>PDF Files</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
                 {/* File List
                 <div className="mt-2 space-y-2">
