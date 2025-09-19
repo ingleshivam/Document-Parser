@@ -4,7 +4,7 @@ import { deleteProcessedDocument } from "./db-processed-documents";
 import { deleteFromQdrant } from "./deleteFromQdrant";
 import { deleteFile } from "./db-files";
 import { deleteConversation } from "./db-conversations";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 
 export async function deleteProcessedDocumentWithQdrant(
   documentId: string,

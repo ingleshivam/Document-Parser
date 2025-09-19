@@ -26,10 +26,7 @@ import { uploadPdfToBlob } from "@/actions/uploadPdfToBlob";
 import { listMarkdownFiles } from "@/actions/listMarkdownFiles";
 import { deleteMarkdownFile } from "@/actions/deleteMarkdownFile";
 import { getMarkdownContent } from "@/actions/getMarkdownContent";
-import {
-  getProcessedDocuments,
-  ProcessedDocument,
-} from "@/actions/getProcessedDocuments";
+// Remove the old import since we're using the database version
 import { queryDocument, ChatMessage } from "@/actions/queryDocument";
 import { createFile, getFiles, updateFile } from "@/actions/db-files";
 import {
@@ -56,6 +53,19 @@ export interface Conversation {
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
+}
+
+// Database ProcessedDocument interface
+export interface DbProcessedDocument {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  chunkCount: number;
+  pageCount?: number | null;
+  sourceUrl?: string | null;
+  sourceFileName?: string | null;
+  userId?: number | null;
+  processedAt: Date;
 }
 import { toast } from "sonner";
 
@@ -101,10 +111,10 @@ export default function Page() {
 
   // Chat state
   const [processedDocuments, setProcessedDocuments] = useState<
-    ProcessedDocument[]
+    DbProcessedDocument[]
   >([]);
   const [selectedDocument, setSelectedDocument] =
-    useState<ProcessedDocument | null>(null);
+    useState<DbProcessedDocument | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState("");
   const [isLoadingChat, setIsLoadingChat] = useState(false);
@@ -116,7 +126,9 @@ export default function Page() {
     string | null
   >(null);
   const [dbFiles, setDbFiles] = useState<any[]>([]);
-  const [dbProcessedDocuments, setDbProcessedDocuments] = useState<any[]>([]);
+  const [dbProcessedDocuments, setDbProcessedDocuments] = useState<
+    DbProcessedDocument[]
+  >([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [pdfFiles, setPdfFiles] = useState<any[]>([]);
   const [isLoadingPdfFiles, setIsLoadingPdfFiles] = useState(false);
@@ -297,9 +309,10 @@ export default function Page() {
         if (conversation) {
           setSelectedDocument({
             id: conversation.documentId,
-            title: conversation.documentTitle,
+            fileName: conversation.documentTitle,
+            fileUrl: "",
             sourceUrl: "",
-            createdAt: "",
+            processedAt: new Date(),
             chunkCount: 0,
           });
         }
@@ -543,9 +556,9 @@ export default function Page() {
   const loadProcessedDocuments = async () => {
     setIsLoadingDocuments(true);
     try {
-      const result = await getProcessedDocuments();
+      const result = await getDbProcessedDocuments();
       if (result.success) {
-        setProcessedDocuments(result.documents);
+        setProcessedDocuments(result.processedDocuments || []);
       } else {
         toast.error("Failed to load documents", {
           description: result.error,
@@ -579,7 +592,7 @@ export default function Page() {
     try {
       const result = await queryDocument(
         currentQuestion,
-        selectedDocument.sourceUrl,
+        selectedDocument.sourceUrl || selectedDocument.fileUrl,
         chatMessages
       );
 
@@ -600,13 +613,15 @@ export default function Page() {
         // Find the corresponding file in the database
         const correspondingFile = dbFiles.find(
           (file) =>
-            file.sourceUrl === selectedDocument.sourceUrl ||
-            file.url === selectedDocument.sourceUrl
+            file.sourceUrl ===
+              (selectedDocument.sourceUrl || selectedDocument.fileUrl) ||
+            file.url ===
+              (selectedDocument.sourceUrl || selectedDocument.fileUrl)
         );
 
         console.log(
           "Looking for file with sourceUrl:",
-          selectedDocument.sourceUrl
+          selectedDocument.sourceUrl || selectedDocument.fileUrl
         );
         console.log(
           "Available files:",
@@ -621,7 +636,8 @@ export default function Page() {
             : conversations.find((c) => c.id === conversationId)?.title ||
               generateConversationTitle(currentQuestion),
           documentId: selectedDocument.id,
-          documentTitle: selectedDocument.title,
+          documentTitle:
+            selectedDocument.sourceFileName || selectedDocument.fileName,
           messages: finalMessages,
           createdAt: isNewConversation
             ? new Date().toISOString()
@@ -1233,7 +1249,8 @@ export default function Page() {
                             <div>
                               <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white">
                                 {selectedDocument
-                                  ? selectedDocument.title
+                                  ? selectedDocument.sourceFileName ||
+                                    selectedDocument.fileName
                                   : "Select a Document"}
                               </h3>
                               <p className="text-sm light:text-gray-600 dark:text-gray-400">
@@ -1323,7 +1340,9 @@ export default function Page() {
                                 Ready to Chat!
                               </h4>
                               <p className="light:text-gray-600 dark:text-gray-400">
-                                Ask any question about "{selectedDocument.title}
+                                Ask any question about "
+                                {selectedDocument.sourceFileName ||
+                                  selectedDocument.fileName}
                                 "
                               </p>
                             </div>
@@ -1541,14 +1560,14 @@ export default function Page() {
                                       </div>
                                       <div className="flex-1 min-w-0">
                                         <h4 className="text-sm font-medium light:text-gray-900 dark:text-white truncate">
-                                          {doc.title}
+                                          {doc.sourceFileName || doc.fileName}
                                         </h4>
                                         <p className="text-xs light:text-gray-500 dark:text-gray-400 truncate">
                                           {doc.chunkCount} chunks
                                         </p>
                                         <p className="text-xs light:text-gray-400 dark:text-gray-500">
                                           {new Date(
-                                            doc.createdAt
+                                            doc.processedAt
                                           ).toLocaleDateString()}
                                         </p>
                                       </div>
@@ -1561,8 +1580,8 @@ export default function Page() {
                                       e.stopPropagation();
                                       handleDeleteProcessedDocument(
                                         doc.id,
-                                        doc.sourceUrl,
-                                        doc.title
+                                        doc.sourceUrl || doc.fileUrl,
+                                        doc.sourceFileName || doc.fileName
                                       );
                                     }}
                                     className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 flex-shrink-0"

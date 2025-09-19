@@ -19,6 +19,8 @@ import {
   Bot,
   History,
   Settings,
+  LogIn,
+  LogOut,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -37,6 +39,8 @@ import {
   SidebarGroupLabel,
   SidebarGroupContent,
 } from "@/components/ui/sidebar";
+import { useSession, signOut } from "next-auth/react";
+import Link from "next/link";
 
 // Sample data for uploaded files
 const uploadedFiles = [
@@ -165,6 +169,7 @@ export function SidebarLeft({
 }: SidebarLeftProps) {
   const [activeSection, setActiveSection] = React.useState("dashboard");
   const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
+  const { data: session, status } = useSession();
 
   const handleSectionChange = (section: string) => {
     setActiveSection(section);
@@ -465,6 +470,55 @@ export function SidebarLeft({
                       <span>Settings</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <Separator className="my-2" />
+
+            {/* Authentication */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {session ? (
+                    <>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild>
+                          <Link href="/dashboard">
+                            <User className="h-4 w-4" />
+                            <span>Dashboard</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          onClick={() => signOut({ callbackUrl: "/" })}
+                        >
+                          <LogOut className="h-4 w-4" />
+                          <span>Sign Out</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild>
+                          <Link href="/auth/signin">
+                            <LogIn className="h-4 w-4" />
+                            <span>Sign In</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild>
+                          <Link href="/auth/signup">
+                            <User className="h-4 w-4" />
+                            <span>Sign Up</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </>
+                  )}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

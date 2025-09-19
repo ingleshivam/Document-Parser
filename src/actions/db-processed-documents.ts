@@ -1,6 +1,8 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
 export async function createProcessedDocument(data: {
   id: string;
@@ -12,6 +14,14 @@ export async function createProcessedDocument(data: {
   sourceFileName?: string;
 }) {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const processedDocument = await prisma.processed_documents.create({
       data: {
         id: data.id,
@@ -21,6 +31,7 @@ export async function createProcessedDocument(data: {
         pageCount: data.pageCount,
         sourceUrl: data.sourceUrl,
         sourceFileName: data.sourceFileName,
+        userId: userId,
       },
     });
     return { success: true, processedDocument };
@@ -32,7 +43,16 @@ export async function createProcessedDocument(data: {
 
 export async function getProcessedDocuments() {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const processedDocuments = await prisma.processed_documents.findMany({
+      where: { userId },
       orderBy: { processedAt: "desc" },
     });
     return { success: true, processedDocuments };
@@ -44,8 +64,19 @@ export async function getProcessedDocuments() {
 
 export async function getProcessedDocumentById(id: string) {
   try {
-    const processedDocument = await prisma.processed_documents.findUnique({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    const processedDocument = await prisma.processed_documents.findFirst({
+      where: {
+        id,
+        userId: userId,
+      },
     });
     return { success: true, processedDocument };
   } catch (error) {
@@ -56,21 +87,37 @@ export async function getProcessedDocumentById(id: string) {
 
 export async function deleteProcessedDocument(id: string) {
   try {
-    // First check if the document exists
-    const existingDocument = await prisma.processed_documents.findUnique({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    // First check if the document exists for this user
+    const existingDocument = await prisma.processed_documents.findFirst({
+      where: {
+        id,
+        userId: userId,
+      },
     });
 
     if (!existingDocument) {
-      console.warn(`Processed document with id ${id} not found`);
+      console.warn(
+        `Processed document with id ${id} not found for user ${userId}`
+      );
       return {
         success: true,
         message: "Document not found, nothing to delete",
       };
     }
 
-    await prisma.processed_documents.delete({
-      where: { id },
+    await prisma.processed_documents.deleteMany({
+      where: {
+        id,
+        userId: userId,
+      },
     });
     return { success: true };
   } catch (error) {
@@ -81,9 +128,20 @@ export async function deleteProcessedDocument(id: string) {
 
 export async function getTotalChunks() {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const result = await prisma.processed_documents.aggregate({
       _sum: {
         chunkCount: true,
+      },
+      where: {
+        userId: userId,
       },
     });
     return { success: true, totalChunks: result._sum.chunkCount || 0 };

@@ -1,6 +1,8 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
 export async function createConversation(data: {
   id: string;
@@ -8,11 +10,20 @@ export async function createConversation(data: {
   fileId?: string;
 }) {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const conversation = await prisma.conversations.create({
       data: {
         id: data.id,
         title: data.title,
         fileId: data.fileId,
+        userId: userId,
         updatedAt: new Date(),
       },
     });
@@ -25,7 +36,16 @@ export async function createConversation(data: {
 
 export async function getConversations() {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const conversations = await prisma.conversations.findMany({
+      where: { userId },
       include: {
         files: true,
         messages: {
@@ -43,8 +63,19 @@ export async function getConversations() {
 
 export async function getConversationById(id: string) {
   try {
-    const conversation = await prisma.conversations.findUnique({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    const conversation = await prisma.conversations.findFirst({
+      where: {
+        id,
+        userId: userId,
+      },
       include: {
         files: true,
         messages: {
@@ -67,8 +98,19 @@ export async function updateConversation(
   }
 ) {
   try {
-    const conversation = await prisma.conversations.update({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    const conversation = await prisma.conversations.updateMany({
+      where: {
+        id,
+        userId: userId,
+      },
       data: {
         ...data,
         updatedAt: new Date(),
@@ -83,8 +125,19 @@ export async function updateConversation(
 
 export async function deleteConversation(id: string) {
   try {
-    await prisma.conversations.delete({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    await prisma.conversations.deleteMany({
+      where: {
+        id,
+        userId: userId,
+      },
     });
     return { success: true };
   } catch (error) {
@@ -95,9 +148,18 @@ export async function deleteConversation(id: string) {
 
 export async function getTotalQuestions() {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const result = await prisma.messages.count({
       where: {
         role: "user",
+        userId: userId,
       },
     });
     return { success: true, totalQuestions: result };

@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
+
 }
 
 datasource db {
@@ -131,29 +131,38 @@ model Tag {
 }
 
 model User {
-  userId       Int        @id @default(autoincrement())
-  email        String     @unique
-  passwordHash String
-  firstName    String?
-  lastName     String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime
-  role         String?
-  isVerified   Int?
-  Favorite     Favorite[]
-  Recipe       Recipe[]
-  Review       Review[]
-  userOtp      userOtp[]
+  userId               Int                    @id @default(autoincrement())
+  email                String
+  passwordHash         String
+  firstName            String?
+  lastName             String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  role                 String?
+  isVerified           Int?
+  project              String                 @default("document-parser") // Add project field to differentiate between projects
+  Favorite             Favorite[]
+  Recipe               Recipe[]
+  Review               Review[]
+  userOtp              userOtp[]
+  conversations        conversations[]        // Add document-related relationships
+  files                files[]
+  messages             messages[]
+  processed_documents  processed_documents[]
+
+  @@unique([email, project]) // Make email unique per project
 }
 
 model conversations {
   id        String     @id
   title     String
   fileId    String?
+  userId    Int?       // Add user relationship
   createdAt DateTime   @default(now())
   updatedAt DateTime
   files     files?     @relation(fields: [fileId], references: [id])
   messages  messages[]
+  User      User?      @relation(fields: [userId], references: [userId])
 }
 
 model files {
@@ -165,9 +174,11 @@ model files {
   size           Int?
   sourceUrl      String?
   sourceFileName String?
+  userId         Int?            // Add user relationship
   uploadedAt     DateTime        @default(now())
   updatedAt      DateTime
   conversations  conversations[]
+  User           User?           @relation(fields: [userId], references: [userId])
 }
 
 model messages {
@@ -175,8 +186,10 @@ model messages {
   conversationId String
   role           String
   content        String
+  userId         Int?          // Add user relationship
   createdAt      DateTime      @default(now())
   conversations  conversations @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  User           User?         @relation(fields: [userId], references: [userId])
 }
 
 model processed_documents {
@@ -187,7 +200,9 @@ model processed_documents {
   pageCount      Int?
   sourceUrl      String?
   sourceFileName String?
+  userId         Int?     // Add user relationship
   processedAt    DateTime @default(now())
+  User           User?    @relation(fields: [userId], references: [userId])
 }
 
 model userOtp {

@@ -1,6 +1,8 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
 export async function createFile(data: {
   id: string;
@@ -13,6 +15,14 @@ export async function createFile(data: {
   sourceFileName?: string;
 }) {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const file = await prisma.files.create({
       data: {
         id: data.id,
@@ -23,6 +33,7 @@ export async function createFile(data: {
         size: data.size,
         sourceUrl: data.sourceUrl,
         sourceFileName: data.sourceFileName,
+        userId: userId,
         updatedAt: new Date(),
       },
     });
@@ -35,7 +46,16 @@ export async function createFile(data: {
 
 export async function getFiles() {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const files = await prisma.files.findMany({
+      where: { userId },
       orderBy: { uploadedAt: "desc" },
     });
     return { success: true, files };
@@ -47,8 +67,19 @@ export async function getFiles() {
 
 export async function getFileById(id: string) {
   try {
-    const file = await prisma.files.findUnique({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    const file = await prisma.files.findFirst({
+      where: {
+        id,
+        userId: userId,
+      },
     });
     return { success: true, file };
   } catch (error) {
@@ -67,8 +98,19 @@ export async function updateFile(
   }
 ) {
   try {
-    const file = await prisma.files.update({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    const file = await prisma.files.updateMany({
+      where: {
+        id,
+        userId: userId,
+      },
       data: {
         ...data,
         updatedAt: new Date(),
@@ -83,8 +125,19 @@ export async function updateFile(
 
 export async function deleteFile(id: string) {
   try {
-    await prisma.files.delete({
-      where: { id },
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
+    await prisma.files.deleteMany({
+      where: {
+        id,
+        userId: userId,
+      },
     });
     return { success: true };
   } catch (error) {
@@ -95,6 +148,14 @@ export async function deleteFile(id: string) {
 
 export async function getTotalPages() {
   try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = parseInt(session.user.id);
+
     const result = await prisma.files.aggregate({
       _sum: {
         pageCount: true,
@@ -103,6 +164,7 @@ export async function getTotalPages() {
         pageCount: {
           not: null,
         },
+        userId: userId,
       },
     });
     return { success: true, totalPages: result._sum.pageCount || 0 };
