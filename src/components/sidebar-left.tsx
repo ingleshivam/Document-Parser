@@ -343,7 +343,7 @@ export function SidebarLeft({
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <Separator className="my-1" />
+            {/* <Separator className="my-1" /> */}
 
             {/* Extracted Text / Data Section */}
             {/* <SidebarGroup>
@@ -453,10 +453,10 @@ export function SidebarLeft({
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <Separator className="my-2" />
+            {/* <Separator className="my-2" /> */}
 
             {/* Settings */}
-            <SidebarGroup>
+            {/* <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
@@ -472,7 +472,7 @@ export function SidebarLeft({
                   </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
-            </SidebarGroup>
+            </SidebarGroup> */}
 
             <Separator className="my-2" />
 
@@ -483,11 +483,16 @@ export function SidebarLeft({
                   {session ? (
                     <>
                       <SidebarMenuItem>
-                        <SidebarMenuButton asChild>
-                          <Link href="/dashboard">
-                            <User className="h-4 w-4" />
-                            <span>Dashboard</span>
-                          </Link>
+                        <SidebarMenuButton
+                          onClick={() => handleSectionChange("user-dashboard")}
+                          className={
+                            activeSection === "user-dashboard"
+                              ? "bg-accent"
+                              : ""
+                          }
+                        >
+                          <User className="h-4 w-4" />
+                          <span>Dashboard</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                       <SidebarMenuItem>
