@@ -105,7 +105,7 @@ export async function getOverviewData() {
     console.log("All messages in database:", allMessages.length);
     console.log(
       "Sample messages:",
-      allMessages.slice(0, 3).map((m) => ({
+      allMessages.slice(0, 3).map((m: any) => ({
         id: m.id,
         role: m.role,
         content: m.content.substring(0, 50),

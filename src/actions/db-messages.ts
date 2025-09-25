@@ -122,7 +122,7 @@ export async function testDatabaseConnection() {
     });
     console.log(
       "Recent messages:",
-      recentMessages.map((m) => ({
+      recentMessages.map((m: any) => ({
         id: m.id,
         role: m.role,
         content: m.content.substring(0, 30),

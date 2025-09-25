@@ -256,8 +256,8 @@ export function OverviewContent({ refreshTrigger }: OverviewContentProps) {
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">
+                    <div className="text-right space-y-1">
+                      <p className="text-xs text-muted-foreground text-center">
                         {new Date(doc.uploadedAt).toLocaleDateString()}
                       </p>
                       <Badge variant="default" className="text-xs h-7">

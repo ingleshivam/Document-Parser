@@ -111,6 +111,13 @@ export default function Page() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const { data: session } = useSession();
 
+  // Redirect authenticated users to dashboard
+  useEffect(() => {
+    if (session) {
+      setActiveSection("dashboard");
+    }
+  }, [session]);
+
   // Chat state
   const [processedDocuments, setProcessedDocuments] = useState<
     DbProcessedDocument[]
@@ -261,13 +268,34 @@ export default function Page() {
       console.log("Conversations result:", result);
 
       if (result.success && result.conversations) {
-        const formattedConversations = result.conversations.map(
-          (conv: any) => ({
+        console.log("Raw conversations from database:", result.conversations);
+        const formattedConversations = result.conversations.map((conv: any) => {
+          console.log(
+            "Processing conversation:",
+            conv.id,
+            "with files:",
+            conv.files
+          );
+          return {
             id: conv.id,
             title: conv.title,
             documentId: conv.fileId || "",
-            documentTitle:
-              conv.files?.sourceFileName || conv.files?.fileName || "Unknown",
+            documentTitle: (() => {
+              // First try to get from files relationship
+              if (conv.files?.sourceFileName) return conv.files.sourceFileName;
+              if (conv.files?.fileName) return conv.files.fileName;
+
+              // If no file relationship, try to find in processed documents
+              if (conv.fileId) {
+                const processedDoc = dbProcessedDocuments.find(
+                  (doc) => doc.id === conv.fileId
+                );
+                if (processedDoc?.fileName) return processedDoc.fileName;
+              }
+
+              // Fallback
+              return conv.files ? "Document" : "Unknown";
+            })(),
             messages: (conv.messages || []).map((msg: any) => ({
               role: msg.role,
               content: msg.content,
@@ -275,8 +303,8 @@ export default function Page() {
             })),
             createdAt: conv.createdAt,
             updatedAt: conv.updatedAt,
-          })
-        );
+          };
+        });
         console.log("Formatted conversations:", formattedConversations.length);
         console.log("Sample conversation:", formattedConversations[0]);
         setConversations(formattedConversations);
@@ -356,12 +384,18 @@ export default function Page() {
 
   // Load PDF files from Vercel Blob and check markdown status
   const loadPdfFiles = async () => {
+    console.log("Starting to load PDF files...");
     setIsLoadingPdfFiles(true);
     try {
+      console.log("Current dbFiles:", dbFiles.length);
+      console.log("Current markdownFiles:", markdownFiles.length);
+
       // Get all files from database that are PDFs
       const pdfFilesFromDb = dbFiles.filter(
         (file) => file.fileType === "application/pdf"
       );
+
+      console.log("Found PDF files in database:", pdfFilesFromDb.length);
 
       // Check which ones have corresponding markdown files
       const pdfFilesWithStatus = await Promise.all(
@@ -386,8 +420,12 @@ export default function Page() {
       console.log("Loaded PDF files with status:", pdfFilesWithStatus);
     } catch (error) {
       console.error("Error loading PDF files:", error);
+      toast.error("Failed to load PDF files", {
+        description: "Please try again or check your connection",
+      });
     } finally {
       setIsLoadingPdfFiles(false);
+      console.log("Finished loading PDF files");
     }
   };
 
@@ -618,16 +656,24 @@ export default function Page() {
             file.sourceUrl ===
               (selectedDocument.sourceUrl || selectedDocument.fileUrl) ||
             file.url ===
-              (selectedDocument.sourceUrl || selectedDocument.fileUrl)
+              (selectedDocument.sourceUrl || selectedDocument.fileUrl) ||
+            file.fileName === selectedDocument.fileName ||
+            file.sourceFileName === selectedDocument.fileName
         );
 
-        console.log(
-          "Looking for file with sourceUrl:",
-          selectedDocument.sourceUrl || selectedDocument.fileUrl
-        );
+        console.log("Looking for file with:", {
+          sourceUrl: selectedDocument.sourceUrl || selectedDocument.fileUrl,
+          fileName: selectedDocument.fileName,
+        });
         console.log(
           "Available files:",
-          dbFiles.map((f) => ({ id: f.id, sourceUrl: f.sourceUrl, url: f.url }))
+          dbFiles.map((f) => ({
+            id: f.id,
+            sourceUrl: f.sourceUrl,
+            url: f.url,
+            fileName: f.fileName,
+            sourceFileName: f.sourceFileName,
+          }))
         );
         console.log("Found corresponding file:", correspondingFile);
 
@@ -752,7 +798,7 @@ export default function Page() {
                     </div>
                     <Button
                       variant="outline"
-                      onClick={() => signOut({ callbackUrl: "/" })}
+                      onClick={() => signOut({ callbackUrl: "/landing" })}
                     >
                       Sign Out
                     </Button>
@@ -988,13 +1034,28 @@ export default function Page() {
                       PDF Files
                     </h3>
                     <Button
-                      onClick={loadPdfFiles}
+                      onClick={async () => {
+                        try {
+                          setIsLoadingPdfFiles(true);
+                          // Refresh both database files and PDF files
+                          await loadDbFiles();
+                          await loadMarkdownFiles();
+                          await loadPdfFiles();
+                        } catch (error) {
+                          console.error("Error refreshing files:", error);
+                          toast.error("Failed to refresh files", {
+                            description: "Please try again",
+                          });
+                        } finally {
+                          setIsLoadingPdfFiles(false);
+                        }
+                      }}
                       disabled={isLoadingPdfFiles}
                       variant="outline"
                       size="sm"
                     >
                       {isLoadingPdfFiles ? (
-                        <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"></div>
                       ) : (
                         <svg
                           className="w-4 h-4"
@@ -1016,8 +1077,8 @@ export default function Page() {
 
                   {isLoadingPdfFiles ? (
                     <div className="flex items-center justify-center py-8">
-                      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="ml-2 light:text-gray-600 dark:text-gray-400">
+                      <div className="w-6 h-6 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"></div>
+                      <span className="ml-2 text-muted-foreground">
                         Loading PDF files...
                       </span>
                     </div>
@@ -1827,7 +1888,7 @@ export default function Page() {
                   {uploadedUrl && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
                       {/* Function 2: Extract Markdown */}
-                      <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl light:border border-gray-200 dark:border-slate-700 p-6">
+                      <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 p-6">
                         <div className="flex items-center space-x-3 mb-6">
                           <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center">
                             <svg
@@ -2002,7 +2063,8 @@ export default function Page() {
                                 const processedDocId = `processed_${Date.now()}`;
                                 await createProcessedDocument({
                                   id: processedDocId,
-                                  fileName: "document",
+                                  fileName:
+                                    existingPdfFile?.fileName || "document",
                                   fileUrl: uploadedUrl,
                                   chunkCount: processRes.points || 0,
                                   pageCount: (processRes as any).pageCount || 0,
