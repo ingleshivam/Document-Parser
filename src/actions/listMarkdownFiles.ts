@@ -1,46 +1,60 @@
 "use server";
 
 import { list } from "@vercel/blob";
+import prisma from "@/lib/prisma";
+import { authOptions } from "@/lib/auth";
+import { getServerSession } from "next-auth/next";
 
 export async function listMarkdownFiles() {
   try {
-    // Get both old and new format files
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.id) {
+      return { success: false, error: "Unauthorized", files: [] } as const;
+    }
+
+    console.log("Session : ", session);
+    const userId = parseInt(session.user.id);
+
+    // ✅ Step 1: Fetch allowed sourceFileNames for this user from DB
+    const userFiles = await prisma.files.findMany({
+      where: { userId },
+      select: { fileName: true },
+    });
+    console.log("userFiles : ", userFiles);
+    const allowedSourceFileNames = userFiles.map((f) => f.fileName);
+    console.log("allowedSourceFileNames : ", allowedSourceFileNames);
+    // ✅ Step 2: List all markdown blobs
     const [oldFiles, newFiles] = await Promise.all([
       list({ prefix: "extracted-content-" }),
       list({ prefix: "extracted-" }),
     ]);
 
-    // Combine and filter markdown files
-    const allBlobs = [...oldFiles.blobs, ...newFiles.blobs]
-      .filter((blob) => blob.pathname.endsWith(".md"))
-      .filter(
-        (blob, index, self) =>
-          // Remove duplicates based on pathname
-          index === self.findIndex((b) => b.pathname === blob.pathname)
-      );
+    const allBlobs = [...oldFiles.blobs, ...newFiles.blobs].filter((blob) =>
+      blob.pathname.endsWith(".md")
+    );
 
-    // Process files and extract source information
+    // ✅ Step 3: Extract info + filter by DB mapping
     const markdownFiles = await Promise.all(
       allBlobs.map(async (blob) => {
         let sourceFileName = "document";
         let sourceUrl = "";
 
-        // Try to extract source info from filename for new format
+        // Extract sourceFileName from blob name
         if (
           blob.pathname.startsWith("extracted-") &&
           !blob.pathname.startsWith("extracted-content-")
         ) {
-          // New format: extracted-{sourceFileName}-{timestamp}.md
           const parts = blob.pathname
             .replace("extracted-", "")
             .replace(".md", "")
             .split("-");
           if (parts.length > 1) {
-            sourceFileName = parts.slice(0, -1).join("-"); // Everything except the last part (timestamp)
+            sourceFileName = parts.slice(1, -1).join("-"); // skip first timestamp, remove last timestamp
           }
         }
 
-        // Try to fetch file content to extract source URL from metadata
+        // Extract source URL from content if available
         try {
           const response = await fetch(blob.url);
           if (response.ok) {
@@ -48,24 +62,9 @@ export async function listMarkdownFiles() {
             const sourceUrlMatch = content.match(/\*\*Source URL:\*\*\s*(.+)/);
             if (sourceUrlMatch) {
               sourceUrl = sourceUrlMatch[1].trim();
-              // Extract filename from URL if we don't have it from filename
-              if (sourceFileName === "document" && sourceUrl) {
-                try {
-                  const url = new URL(sourceUrl);
-                  const pathParts = url.pathname.split("/");
-                  const lastPart = pathParts[pathParts.length - 1];
-                  if (lastPart && lastPart.includes(".")) {
-                    sourceFileName = lastPart.split(".")[0];
-                  }
-                } catch {
-                  // If URL parsing fails, keep the default
-                }
-              }
             }
           }
-        } catch {
-          // If fetching content fails, continue with default values
-        }
+        } catch {}
 
         return {
           url: blob.url,
@@ -79,17 +78,22 @@ export async function listMarkdownFiles() {
         };
       })
     );
+    console.log("markdownFiles : ", markdownFiles);
 
-    // Sort by creation date (newest first)
-    const sortedFiles = markdownFiles.sort(
+    // ✅ Step 4: Only keep files that belong to this user
+    const filteredFiles = markdownFiles.filter(
+      (file) =>
+        file.sourceFileName &&
+        allowedSourceFileNames.includes(file.sourceFileName)
+    );
+    console.log("filteredFiles : ", filteredFiles);
+    // ✅ Step 5: Sort newest first
+    const sortedFiles = filteredFiles.sort(
       (a, b) =>
         new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
     );
 
-    return {
-      success: true,
-      files: sortedFiles,
-    } as const;
+    return { success: true, files: sortedFiles } as const;
   } catch (error) {
     return {
       success: false,

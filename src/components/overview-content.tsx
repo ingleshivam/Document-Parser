@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getOverviewData } from "@/actions/db-overview";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface OverviewData {
   totalDocuments: number;
@@ -81,19 +82,80 @@ export function OverviewContent({ refreshTrigger }: OverviewContentProps) {
             </p>
           </div>
         </div>
+
+        {/* Skeletons for cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[...Array(3)].map((_, i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Loading...
-                </CardTitle>
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-6" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">-</div>
+                <Skeleton className="h-6 w-12 mb-2" />
+                <Skeleton className="h-3 w-20" />
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {/* Skeleton for last uploaded file */}
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <Skeleton className="h-12 w-12 rounded-lg" />
+                <div>
+                  <Skeleton className="h-4 w-32 mb-2" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
+              </div>
+              <Skeleton className="h-7 w-16 rounded-md" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Skeleton for recent docs & questions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+            </CardHeader>
+            <CardContent>
+              {[...Array(3)].map((_, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between p-3 rounded-lg border"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Skeleton className="h-8 w-8 rounded-lg" />
+                    <div>
+                      <Skeleton className="h-4 w-32 mb-1" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-4 w-16" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+            </CardHeader>
+            <CardContent>
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="p-3 rounded-lg border space-y-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </div>
       </div>
     );

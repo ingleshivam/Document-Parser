@@ -28,6 +28,7 @@ import {
   Globe,
 } from "lucide-react";
 import Link from "next/link";
+import { ThemeButton } from "./theme-button";
 
 export default function LandingPage() {
   return (
@@ -53,11 +54,7 @@ export default function LandingPage() {
                   Sign In
                 </Button>
               </Link>
-              <Link href="/auth/signup">
-                <Button className="bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 shadow-lg hover:shadow-xl transition-all duration-300">
-                  Get Started
-                </Button>
-              </Link>
+              <ThemeButton />
             </div>
           </div>
         </div>
@@ -104,21 +101,21 @@ export default function LandingPage() {
                     size="lg"
                     className="w-full sm:w-auto bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 text-lg px-8 py-6 shadow-lg hover:shadow-xl transition-all duration-300 group"
                   >
-                    Start Free Trial
+                    Get Started
                     <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                   </Button>
                 </Link>
-                <Button
+                {/* <Button
                   variant="outline"
                   size="lg"
                   className="w-full sm:w-auto text-lg px-8 py-6 group bg-transparent hover:bg-accent/10 border-2 hover:border-primary/30 transition-all duration-300"
                 >
                   <Play className="mr-2 h-5 w-5 group-hover:scale-110 transition-transform" />
                   Watch Demo
-                </Button>
+                </Button> */}
               </div>
 
-              <div className="flex items-center space-x-8 text-sm text-muted-foreground">
+              {/* <div className="flex items-center space-x-8 text-sm text-muted-foreground">
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="h-4 w-4 text-primary" />
                   <span>No credit card required</span>
@@ -127,10 +124,10 @@ export default function LandingPage() {
                   <CheckCircle className="h-4 w-4 text-primary" />
                   <span>Free 14-day trial</span>
                 </div>
-              </div>
+              </div> */}
 
               {/* Social Proof */}
-              <div className="pt-4">
+              {/* <div className="pt-4">
                 <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                   <div className="flex items-center space-x-1">
                     <div className="flex -space-x-1">
@@ -148,7 +145,7 @@ export default function LandingPage() {
                     <span>Trusted by 10,000+ professionals</span>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </div>
 
             {/* Right side - Enhanced Visual */}
@@ -231,7 +228,7 @@ export default function LandingPage() {
       </section>
 
       {/* Enhanced Stats Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-muted/30 via-muted/20 to-accent/10 border-y border-primary/10">
+      {/* <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-muted/30 via-muted/20 to-accent/10 border-y border-primary/10">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
             <div className="text-center space-y-3 group">
@@ -268,7 +265,7 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Features Section */}
       <section className="py-24 px-4 sm:px-6 lg:px-8">
@@ -494,22 +491,22 @@ export default function LandingPage() {
                 variant="secondary"
                 className="w-full sm:w-auto text-lg px-8 py-6 bg-primary-foreground text-primary hover:bg-primary-foreground/90 shadow-xl hover:shadow-2xl transition-all duration-300 group"
               >
-                Start Free Trial
+                Get Started
                 <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Button>
             </Link>
-            <Button
+            {/* <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto text-lg px-8 py-6 border-2 border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent backdrop-blur-sm transition-all duration-300"
             >
               Contact Sales
-            </Button>
+            </Button> */}
           </div>
-          <p className="text-sm text-primary-foreground/70">
+          {/* <p className="text-sm text-primary-foreground/70">
             No credit card required • 14-day free trial • Cancel anytime • 99.9%
             uptime guarantee
-          </p>
+          </p> */}
         </div>
       </section>
 
@@ -526,7 +523,7 @@ export default function LandingPage() {
               </span>
             </div>
             <div className="text-sm text-muted-foreground">
-              © 2025 Document Parser. All rights reserved. Built with ❤️ for
+              © 2025 Shivam Ingle. All rights reserved. Built with ❤️ for
               productivity.
             </div>
           </div>
