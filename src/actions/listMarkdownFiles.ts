@@ -83,9 +83,9 @@ export async function listMarkdownFiles() {
     // ✅ Step 4: Only keep files that belong to this user
     const filteredFiles = markdownFiles.filter(
       (file) =>
-        file.sourceFileName &&
-        allowedSourceFileNames.includes(file.sourceFileName)
-    );
+        file.sourceFileName && 
+        allowedSourceFileNames.includes(file.sourceFileName)   
+    ); 
     console.log("filteredFiles : ", filteredFiles);
     // ✅ Step 5: Sort newest first
     const sortedFiles = filteredFiles.sort(

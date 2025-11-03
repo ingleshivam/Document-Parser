@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-
 }
 
 datasource db {
@@ -8,161 +7,38 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Favorite {
-  userId      Int
-  recipeId    Int
-  isFavourite Int?
-  Recipe      Recipe @relation(fields: [recipeId], references: [recipeId])
-  User        User   @relation(fields: [userId], references: [userId])
-
-  @@id([userId, recipeId])
-}
-
-model Image {
-  imageId     Int      @id @default(autoincrement())
-  imageUrl    String
-  description String?
-  createdAt   DateTime @default(now())
-  recipeId    Int?
-  Recipe      Recipe?  @relation(fields: [recipeId], references: [recipeId])
-}
-
-model Ingredient {
-  ingredientId     Int                @id @default(autoincrement())
-  name             String             @unique
-  description      String?
-  RecipeIngredient RecipeIngredient[]
-}
-
-model Instructions {
-  instructionId      Int                  @id @default(autoincrement())
-  description        String
-  RecipeInstructions RecipeInstructions[]
-}
-
-model NutritionInfo {
-  nutritionId         Int                   @id @default(autoincrement())
-  calorie             String?
-  fat                 String?
-  carbs               String?
-  protein             String?
-  sugar               String?
-  fiber               String?
-  RecipeNutritionInfo RecipeNutritionInfo[]
-}
-
-model Recipe {
-  recipeId            Int                   @id @default(autoincrement())
-  title               String
-  description         String?
-  cookingTime         Int?
-  servingSize         Int?
-  categoryId          Int
+model User {
+  userId              Int                   @id @default(autoincrement())
+  email               String
+  passwordHash        String
+  firstName           String?
+  lastName            String?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime
-  userId              Int?
-  approveStatus       String
-  approvedDate        DateTime?
-  difficulty          Int?
-  isSavedAsDraft      Int
-  prepTime            Int?
-  Favorite            Favorite[]
-  Image               Image[]
-  User                User?                 @relation(fields: [userId], references: [userId])
-  RecipeIngredient    RecipeIngredient[]
-  RecipeInstructions  RecipeInstructions[]
-  RecipeNutritionInfo RecipeNutritionInfo[]
-  RecipeTag           RecipeTag[]
-  Review              Review[]
-}
+  role                String?
+  isVerified          Int?
+  project             String                @default("document-parser")
+  conversations       conversations[]
+  files               files[]
+  messages            messages[]
+  processed_documents processed_documents[]
+  userOtp             userOtp[]
 
-model RecipeIngredient {
-  recipeId     Int
-  ingredientId Int
-  quantity     String
-  Ingredient   Ingredient @relation(fields: [ingredientId], references: [ingredientId])
-  Recipe       Recipe     @relation(fields: [recipeId], references: [recipeId])
-
-  @@id([recipeId, ingredientId])
-}
-
-model RecipeInstructions {
-  recipeId      Int
-  instructionId Int
-  Instructions  Instructions @relation(fields: [instructionId], references: [instructionId])
-  Recipe        Recipe       @relation(fields: [recipeId], references: [recipeId])
-
-  @@id([recipeId, instructionId])
-}
-
-model RecipeNutritionInfo {
-  recipeId      Int
-  nutritionId   Int
-  NutritionInfo NutritionInfo @relation(fields: [nutritionId], references: [nutritionId])
-  Recipe        Recipe        @relation(fields: [recipeId], references: [recipeId])
-
-  @@id([recipeId, nutritionId])
-}
-
-model RecipeTag {
-  recipeId Int
-  tagId    Int
-  Recipe   Recipe @relation(fields: [recipeId], references: [recipeId])
-  Tag      Tag    @relation(fields: [tagId], references: [tagId])
-
-  @@id([recipeId, tagId])
-}
-
-model Review {
-  reviewId   Int      @id @default(autoincrement())
-  rating     Int
-  reviewText String?
-  createdAt  DateTime @default(now())
-  userId     Int
-  recipeId   Int
-  Recipe     Recipe   @relation(fields: [recipeId], references: [recipeId])
-  User       User     @relation(fields: [userId], references: [userId])
-}
-
-model Tag {
-  tagId     Int         @id @default(autoincrement())
-  name      String      @unique
-  RecipeTag RecipeTag[]
-}
-
-model User {
-  userId               Int                    @id @default(autoincrement())
-  email                String
-  passwordHash         String
-  firstName            String?
-  lastName             String?
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime
-  role                 String?
-  isVerified           Int?
-  project              String                 @default("document-parser") // Add project field to differentiate between projects
-  Favorite             Favorite[]
-  Recipe               Recipe[]
-  Review               Review[]
-  userOtp              userOtp[]
-  conversations        conversations[]        // Add document-related relationships
-  files                files[]
-  messages             messages[]
-  processed_documents  processed_documents[]
-
-  @@unique([email, project]) // Make email unique per project
+  @@unique([email, project])
 }
 
 model conversations {
-  id        String     @id
-  title     String
-  fileId    String?
-  userId    Int?       // Add user relationship
-  createdAt DateTime   @default(now())
-  updatedAt DateTime
-  files     files?     @relation(fields: [fileId], references: [id])
-  messages  messages[]
-  User      User?      @relation(fields: [userId], references: [userId])
+  id                  String               @id
+  title               String
+  fileId              String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime
+  userId              Int?
+  documentId          String?
+  processed_documents processed_documents? @relation(fields: [documentId], references: [id])
+  files               files?               @relation(fields: [fileId], references: [id])
+  User                User?                @relation(fields: [userId], references: [userId])
+  messages            messages[]
 }
 
 model files {
@@ -174,9 +50,9 @@ model files {
   size           Int?
   sourceUrl      String?
   sourceFileName String?
-  userId         Int?            // Add user relationship
   uploadedAt     DateTime        @default(now())
   updatedAt      DateTime
+  userId         Int?
   conversations  conversations[]
   User           User?           @relation(fields: [userId], references: [userId])
 }
@@ -186,23 +62,24 @@ model messages {
   conversationId String
   role           String
   content        String
-  userId         Int?          // Add user relationship
   createdAt      DateTime      @default(now())
+  userId         Int?
   conversations  conversations @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   User           User?         @relation(fields: [userId], references: [userId])
 }
 
 model processed_documents {
-  id             String   @id
+  id             String          @id
   fileName       String
   fileUrl        String
   chunkCount     Int
   pageCount      Int?
   sourceUrl      String?
   sourceFileName String?
-  userId         Int?     // Add user relationship
-  processedAt    DateTime @default(now())
-  User           User?    @relation(fields: [userId], references: [userId])
+  processedAt    DateTime        @default(now())
+  userId         Int?
+  conversations  conversations[]
+  User           User?           @relation(fields: [userId], references: [userId])
 }
 
 model userOtp {
