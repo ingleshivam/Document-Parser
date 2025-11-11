@@ -27,7 +27,7 @@ export async function createFile(data: {
       data: {
         id: data.id,
         url: data.url,
-        fileName: data.fileName,
+        fileName: data.fileName?.replace(/\s+/g, "-"),
         fileType: data.fileType,
         pageCount: data.pageCount,
         size: data.size,

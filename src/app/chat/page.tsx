@@ -12,12 +12,13 @@ import {
 import { deleteProcessedDocumentWithQdrant } from "@/actions/deleteProcessedDocumentWithQdrant";
 import { ChatMessage, queryDocument } from "@/actions/queryDocument";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   createProcessedDocument,
   getProcessedDocuments as getDbProcessedDocuments,
 } from "@/actions/db-processed-documents";
+import { getFiles } from "@/actions/db-files";
 
 export interface Conversation {
   id: string;
@@ -91,6 +92,31 @@ export default function Chat() {
       }
     } catch (error) {
       console.error("Error loading conversation:", error);
+    }
+  };
+
+  const loadDbProcessedDocuments = async () => {
+    try {
+      const result = await getDbProcessedDocuments();
+      if (result.success && result.processedDocuments) {
+        setDbProcessedDocuments(result.processedDocuments);
+      }
+    } catch (error) {
+      console.error("Error loading processed documents:", error);
+    }
+  };
+
+  const loadDbFiles = async () => {
+    try {
+      console.log("Loading database files...");
+      const result = await getFiles();
+      console.log("Files result:", result);
+      if (result.success && result.files) {
+        setDbFiles(result.files);
+        console.log("Loaded", result.files.length, "files from database");
+      }
+    } catch (error) {
+      console.error("Error loading files:", error);
     }
   };
 
@@ -424,10 +450,18 @@ export default function Chat() {
     setChatMessages([]);
     setSelectedDocument(null);
   };
+
+  useEffect(() => {
+    loadConversations();
+    loadProcessedDocuments();
+    loadDbProcessedDocuments();
+    loadDbFiles();
+  }, []);
+
   return (
     <>
-      <div className="h-[calc(100vh-8rem)] flex flex-col">
-        <div className="text-center mb-6 flex-shrink-0">
+      <div className="h-[calc(100vh-8rem)] flex flex-col ">
+        <div className="text-center mb-6 flex-shrink-0 py-8">
           <h2 className="text-3xl font-bold light:text-gray-900 dark:text-white mb-2">
             Chat with Documents
           </h2>

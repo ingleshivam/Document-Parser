@@ -38,124 +38,11 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarGroupContent,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
-
-// Sample data for uploaded files
-const uploadedFiles = [
-  {
-    id: "1",
-    name: "shivaji.pdf",
-    size: "2.4 MB",
-    uploadDate: "2024-01-15",
-    uploadTime: "14:30",
-    pages: 15,
-    status: "SUCCESS",
-  },
-  {
-    id: "2",
-    name: "contract_agreement.pdf",
-    size: "1.8 MB",
-    uploadDate: "2024-01-14",
-    uploadTime: "09:15",
-    pages: 8,
-    status: "PROCESSING",
-  },
-  {
-    id: "3",
-    name: "research_paper.pdf",
-    size: "5.2 MB",
-    uploadDate: "2024-01-13",
-    uploadTime: "16:20",
-    pages: 32,
-    status: "SUCCESS",
-  },
-  {
-    id: "4",
-    name: "financial_report.pdf",
-    size: "3.1 MB",
-    uploadDate: "2024-01-12",
-    uploadTime: "11:45",
-    pages: 24,
-    status: "SUCCESS",
-  },
-  {
-    id: "5",
-    name: "user_manual.pdf",
-    size: "4.7 MB",
-    uploadDate: "2024-01-11",
-    uploadTime: "13:20",
-    pages: 18,
-    status: "SUCCESS",
-  },
-];
-
-// Sample chat history with answers
-const chatHistory = [
-  {
-    id: "1",
-    fileId: "1",
-    question: "What is the main topic of this document?",
-    answer:
-      "The document discusses the life and achievements of Chhatrapati Shivaji Maharaj, focusing on his military strategies and administrative reforms.",
-    timestamp: "2024-01-15 14:30",
-  },
-  {
-    id: "2",
-    fileId: "1",
-    question: "Summarize the key points",
-    answer:
-      "Key points include: 1) Military innovations, 2) Fort construction, 3) Naval development, 4) Administrative systems, 5) Religious tolerance policies.",
-    timestamp: "2024-01-15 14:45",
-  },
-  {
-    id: "3",
-    fileId: "3",
-    question: "What are the research findings?",
-    answer:
-      "The research found significant improvements in efficiency metrics, with a 23% increase in productivity and 15% reduction in operational costs.",
-    timestamp: "2024-01-13 16:20",
-  },
-  {
-    id: "4",
-    fileId: "4",
-    question: "What is the revenue breakdown?",
-    answer:
-      "Revenue breakdown: Q1: $2.3M, Q2: $2.8M, Q3: $3.1M, Q4: $3.5M. Total annual revenue: $11.7M with 22% YoY growth.",
-    timestamp: "2024-01-12 15:30",
-  },
-  {
-    id: "5",
-    fileId: "5",
-    question: "How do I install the software?",
-    answer:
-      "Installation steps: 1) Download installer, 2) Run as administrator, 3) Follow setup wizard, 4) Configure settings, 5) Restart system.",
-    timestamp: "2024-01-11 14:15",
-  },
-];
-
-// Calculate statistics
-const totalDocuments = uploadedFiles.length;
-const totalPages = uploadedFiles.reduce((sum, file) => sum + file.pages, 0);
-const totalQuestions = chatHistory.length;
-const lastUploadedFile = uploadedFiles.sort(
-  (a, b) =>
-    new Date(`${b.uploadDate} ${b.uploadTime}`).getTime() -
-    new Date(`${a.uploadDate} ${a.uploadTime}`).getTime()
-)[0];
-const recentDocuments = uploadedFiles
-  .sort(
-    (a, b) =>
-      new Date(`${b.uploadDate} ${b.uploadTime}`).getTime() -
-      new Date(`${a.uploadDate} ${a.uploadTime}`).getTime()
-  )
-  .slice(0, 3);
-const recentQuestions = chatHistory
-  .sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  )
-  .slice(0, 3);
+import { useRouter } from "next/navigation";
 
 interface SidebarLeftProps extends React.ComponentProps<typeof Sidebar> {
   onSectionChange?: (section: string) => void;
@@ -180,6 +67,8 @@ export function SidebarLeft({
     setSelectedFile(fileId);
     onFileSelect?.(fileId);
   };
+
+  const router = useRouter();
 
   return (
     <Sidebar
@@ -212,10 +101,7 @@ export function SidebarLeft({
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => handleSectionChange("dashboard")}
-                      className={
-                        activeSection === "dashboard" ? "bg-accent" : ""
-                      }
+                      onClick={() => router.push("/dashboard")}
                     >
                       <Home className="h-4 w-4" />
                       <span>Overview</span>
@@ -235,7 +121,7 @@ export function SidebarLeft({
                   <Button
                     size="sm"
                     className="w-full justify-start"
-                    onClick={() => handleSectionChange("upload")}
+                    onClick={() => router.push("/upload")}
                   >
                     <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
                     <span className="truncate">Upload PDF</span>
@@ -244,7 +130,7 @@ export function SidebarLeft({
                     size="sm"
                     variant="outline"
                     className="w-full justify-start"
-                    onClick={() => handleSectionChange("chat")}
+                    onClick={() => router.push("/chat")}
                   >
                     <MessageCircle className="h-4 w-4 mr-2 flex-shrink-0" />
                     <span className="truncate">Ask Question</span>
@@ -261,177 +147,28 @@ export function SidebarLeft({
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => handleSectionChange("upload")}
-                      className={activeSection === "upload" ? "bg-accent" : ""}
-                    >
+                    <SidebarMenuButton onClick={() => router.push("/upload")}>
                       <Upload className="h-4 w-4" />
                       <span>Upload & Manage</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => handleSectionChange("files")}
-                      className={activeSection === "files" ? "bg-accent" : ""}
-                    >
+                    <SidebarMenuButton onClick={() => router.push("/files")}>
                       <File className="h-4 w-4" />
                       <span>Markdown Files</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => handleSectionChange("pdf-files")}
-                      className={
-                        activeSection === "pdf-files" ? "bg-accent" : ""
-                      }
+                      onClick={() => router.push("/pdf-files")}
                     >
                       <FileText className="h-4 w-4" />
                       <span>PDF Files</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
-                {/* File List
-                <div className="mt-2 space-y-2">
-                  {uploadedFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors hover:bg-accent ${
-                        selectedFile === file.id
-                          ? "bg-accent border-primary"
-                          : ""
-                      }`}
-                      onClick={() => handleFileSelect(file.id)}
-                    >
-                      <div className="flex items-start gap-2 min-w-0">
-                        <File className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">
-                            {file.name}
-                          </p>
-                          <div className="flex items-center space-x-1 text-xs text-muted-foreground mt-1">
-                            <span className="truncate">{file.size}</span>
-                            <span>•</span>
-                            <span>{file.pages}p</span>
-                            <span>•</span>
-                            <span className="truncate">{file.uploadDate}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-1 flex-shrink-0">
-                          <Badge
-                            variant={
-                              file.status === "SUCCESS"
-                                ? "default"
-                                : "secondary"
-                            }
-                            className="text-xs px-1.5 py-0.5 aspect-square"
-                          >
-                            {file.status === "SUCCESS" ? "✓" : "⏳"}
-                          </Badge>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
-                            title="Delete file"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div> */}
               </SidebarGroupContent>
             </SidebarGroup>
-
-            {/* <Separator className="my-1" /> */}
-
-            {/* Extracted Text / Data Section */}
-            {/* <SidebarGroup>
-              <SidebarGroupLabel>Extracted Data</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => handleSectionChange("extracted")}
-                      className={
-                        activeSection === "extracted" ? "bg-accent" : ""
-                      }
-                    >
-                      <FileText className="h-4 w-4" />
-                      <span>View Extracted Text</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-
-                {selectedFile && (
-                  <div className="mt-2">
-                    <div className="p-3 bg-muted rounded-lg">
-                      <h4 className="text-sm font-medium mb-3 flex items-center">
-                        <FileText className="h-4 w-4 mr-2 flex-shrink-0" />
-                        <span className="truncate">Document Info</span>
-                      </h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between items-center min-w-0">
-                          <span className="text-muted-foreground">Pages:</span>
-                          <span className="font-medium">
-                            {
-                              uploadedFiles.find((f) => f.id === selectedFile)
-                                ?.pages
-                            }
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center min-w-0">
-                          <span className="text-muted-foreground">Size:</span>
-                          <span className="font-medium truncate">
-                            {
-                              uploadedFiles.find((f) => f.id === selectedFile)
-                                ?.size
-                            }
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center min-w-0">
-                          <span className="text-muted-foreground">
-                            Uploaded:
-                          </span>
-                          <span className="font-medium truncate">
-                            {
-                              uploadedFiles.find((f) => f.id === selectedFile)
-                                ?.uploadDate
-                            }
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center min-w-0">
-                          <span className="text-muted-foreground">Status:</span>
-                          <Badge
-                            variant={
-                              uploadedFiles.find((f) => f.id === selectedFile)
-                                ?.status === "SUCCESS"
-                                ? "default"
-                                : "secondary"
-                            }
-                            className="text-xs px-1.5 py-0.5 aspect-square"
-                          >
-                            {uploadedFiles.find((f) => f.id === selectedFile)
-                              ?.status === "SUCCESS"
-                              ? "✓"
-                              : "⏳"}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="flex gap-1 mt-3">
-                        <Button size="sm" className="flex-1 min-w-0">
-                          <Download className="h-3 w-3 mr-1 flex-shrink-0" />
-                          <span className="truncate">Download</span>
-                        </Button>
-                        <Button size="sm" variant="outline" className="px-2">
-                          <RefreshCw className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </SidebarGroupContent>
-            </SidebarGroup> */}
 
             <Separator className="my-1" />
 
@@ -441,10 +178,7 @@ export function SidebarLeft({
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => handleSectionChange("chat")}
-                      className={activeSection === "chat" ? "bg-accent" : ""}
-                    >
+                    <SidebarMenuButton onClick={() => router.push("/chat")}>
                       <Bot className="h-4 w-4" />
                       <span>Chat with Docs</span>
                     </SidebarMenuButton>
@@ -484,12 +218,7 @@ export function SidebarLeft({
                     <>
                       <SidebarMenuItem>
                         <SidebarMenuButton
-                          onClick={() => handleSectionChange("user-dashboard")}
-                          className={
-                            activeSection === "user-dashboard"
-                              ? "bg-accent"
-                              : ""
-                          }
+                          onClick={() => router.push("user-dashboard")}
                         >
                           <User className="h-4 w-4" />
                           <span>Dashboard</span>

@@ -228,7 +228,7 @@ export default function Files() {
   return (
     <>
       <div className="space-y-6">
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 py-8">
           <h2 className="text-3xl font-bold light:text-gray-900 dark:text-white mb-4">
             Files & Documents
           </h2>

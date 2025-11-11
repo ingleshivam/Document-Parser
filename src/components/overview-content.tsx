@@ -31,7 +31,7 @@ interface OverviewContentProps {
   refreshTrigger?: number;
 }
 
-export function OverviewContent({ refreshTrigger }: OverviewContentProps) {
+export function OverviewContent() {
   const [overviewData, setOverviewData] = useState<OverviewData>({
     totalDocuments: 0,
     totalPages: 0,
@@ -61,13 +61,6 @@ export function OverviewContent({ refreshTrigger }: OverviewContentProps) {
   useEffect(() => {
     fetchOverviewData();
   }, []);
-
-  // Refresh data when refreshTrigger changes
-  useEffect(() => {
-    if (refreshTrigger !== undefined) {
-      fetchOverviewData();
-    }
-  }, [refreshTrigger]);
 
   if (loading) {
     return (

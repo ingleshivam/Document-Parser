@@ -32,9 +32,14 @@ export default function PdfFiles() {
       if (result.success && result.files) {
         setDbFiles(result.files);
         console.log("Loaded", result.files.length, "files from database");
+      } else {
+        console.warn("getFiles returned no files or success=false", result);
       }
     } catch (error) {
       console.error("Error loading files:", error);
+      toast.error("Failed to load DB files", {
+        description: "Please check the server or network",
+      });
     }
   };
 
@@ -42,14 +47,16 @@ export default function PdfFiles() {
     setIsLoadingFiles(true);
     try {
       const result = await listMarkdownFiles();
+      console.log("listMarkdownFiles result:", result);
       if (result.success) {
-        setMarkdownFiles(result.files);
+        setMarkdownFiles(result.files || []);
       } else {
-        toast.error("Failed to load files", {
+        toast.error("Failed to load markdown files", {
           description: result.error,
         });
       }
     } catch (error) {
+      console.error("Error listing markdown files:", error);
       toast.error("Failed to load files", {
         description: "An unexpected error occurred",
       });
@@ -58,33 +65,36 @@ export default function PdfFiles() {
     }
   };
 
+  // Keep loadPdfFiles purely as "compute PDF file status from current state".
   const loadPdfFiles = async () => {
-    console.log("Starting to load PDF files...");
+    console.log("Starting to compute PDF files from state...");
     setIsLoadingPdfFiles(true);
     try {
-      // Get all files from database that are PDFs
-      const pdfFilesFromDb = dbFiles.filter(
+      // Ensure dbFiles exists
+      if (!dbFiles || dbFiles.length === 0) {
+        console.log("No dbFiles found yet.");
+      }
+
+      const pdfFilesFromDb = (dbFiles || []).filter(
         (file) => file.fileType === "application/pdf"
       );
 
       console.log("Found PDF files in database:", pdfFilesFromDb.length);
 
-      const pdfFilesWithStatus = await Promise.all(
-        pdfFilesFromDb.map(async (file) => {
-          const hasMarkdown = markdownFiles.some(
-            (mdFile) =>
-              mdFile.sourceFileName === file.fileName ||
-              mdFile.fileName === file.fileName ||
-              mdFile.sourceUrl === file.url
-          );
+      const pdfFilesWithStatus = pdfFilesFromDb.map((file) => {
+        const hasMarkdown = (markdownFiles || []).some(
+          (mdFile) =>
+            mdFile.sourceFileName === file.fileName ||
+            mdFile.fileName === file.fileName ||
+            mdFile.sourceUrl === file.url
+        );
 
-          return {
-            ...file,
-            hasMarkdown,
-            status: hasMarkdown ? "SUCCESS" : "PENDING",
-          };
-        })
-      );
+        return {
+          ...file,
+          hasMarkdown,
+          status: hasMarkdown ? "SUCCESS" : "PENDING",
+        };
+      });
 
       setPdfFiles(pdfFilesWithStatus);
       console.log("Loaded PDF files with status:", pdfFilesWithStatus);
@@ -95,7 +105,7 @@ export default function PdfFiles() {
       });
     } finally {
       setIsLoadingPdfFiles(false);
-      console.log("Finished loading PDF files");
+      console.log("Finished computing PDF files");
     }
   };
 
@@ -103,14 +113,11 @@ export default function PdfFiles() {
     try {
       setIsExtractingMarkdown(true);
 
-      // Parse the PDF to generate markdown
       const result = await extractMarkdownOnly(pdfFile.url);
 
       if (result.success) {
-        // Reload markdown files and PDF files to update status
+        // After parsing, reload markdown list (and loadPdfFiles will react to it)
         await loadMarkdownFiles();
-        await loadPdfFiles();
-
         toast.success("PDF parsed successfully!", {
           description: "Markdown file has been generated",
         });
@@ -120,6 +127,7 @@ export default function PdfFiles() {
         });
       }
     } catch (error) {
+      console.error("Error parsing PDF:", error);
       toast.error("Failed to parse PDF", {
         description: "An unexpected error occurred",
       });
@@ -128,15 +136,29 @@ export default function PdfFiles() {
     }
   };
 
+  // On mount: load DB files and markdown files, then compute pdfFiles.
   useEffect(() => {
-    loadMarkdownFiles();
-    loadDbFiles();
+    (async () => {
+      await loadDbFiles();
+      await loadMarkdownFiles();
+      // loadPdfFiles will also run from the dependency effect below,
+      // but we can call it here as well to ensure immediate computation.
+      await loadPdfFiles();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Whenever dbFiles or markdownFiles change, recompute pdfFiles.
+  useEffect(() => {
+    // only run when either has at least one item OR when either changes
+    loadPdfFiles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbFiles, markdownFiles]);
 
   return (
     <>
       <div className="space-y-6">
-        <div className="text-center mb-8">
+        <div className="text-center mb-8  py-8">
           <h2 className="text-3xl font-bold light:text-gray-900 dark:text-white mb-4">
             PDF Files
           </h2>
@@ -148,7 +170,6 @@ export default function PdfFiles() {
           </p>
         </div>
 
-        {/* PDF Files Section */}
         <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-semibold light:text-gray-900 dark:text-white">
@@ -157,21 +178,17 @@ export default function PdfFiles() {
             <Button
               onClick={async () => {
                 try {
-                  setIsLoadingPdfFiles(true);
-                  // Refresh both database files and PDF files
+                  // refresh database & markdown list; pdfFiles will recompute automatically
                   await loadDbFiles();
                   await loadMarkdownFiles();
-                  await loadPdfFiles();
                 } catch (error) {
                   console.error("Error refreshing files:", error);
                   toast.error("Failed to refresh files", {
                     description: "Please try again",
                   });
-                } finally {
-                  setIsLoadingPdfFiles(false);
                 }
               }}
-              disabled={isLoadingPdfFiles}
+              disabled={isLoadingPdfFiles || isLoadingFiles}
               variant="outline"
               size="sm"
             >
@@ -267,7 +284,9 @@ export default function PdfFiles() {
                         </span>
                         <span>•</span>
                         <span>
-                          {new Date(file.uploadedAt).toLocaleDateString()}
+                          {file.uploadedAt
+                            ? new Date(file.uploadedAt).toLocaleDateString()
+                            : "Unknown date"}
                         </span>
                         <span>•</span>
                         <span className="flex items-center">
