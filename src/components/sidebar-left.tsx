@@ -80,14 +80,16 @@ export function SidebarLeft({
           <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-sm">DP</span>
           </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent truncate">
-              Document Parser
-            </h1>
-            <p className="text-xs text-muted-foreground truncate">
-              AI-Powered PDF Analysis
-            </p>
-          </div>
+          <Link href={"/home"}>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent truncate">
+                Document Parser
+              </h1>
+              <p className="text-xs text-muted-foreground truncate">
+                AI-Powered PDF Analysis
+              </p>
+            </div>
+          </Link>
         </div>
       </SidebarHeader>
 
@@ -226,7 +228,7 @@ export function SidebarLeft({
                       </SidebarMenuItem>
                       <SidebarMenuItem>
                         <SidebarMenuButton
-                          onClick={() => signOut({ callbackUrl: "/" })}
+                          onClick={() => signOut({ callbackUrl: "/home" })}
                         >
                           <LogOut className="h-4 w-4" />
                           <span>Sign Out</span>

@@ -112,7 +112,7 @@ export function UserDashboard() {
             </div>
             <Button
               variant="outline"
-              onClick={() => signOut({ callbackUrl: "/" })}
+              onClick={() => signOut({ callbackUrl: "/home" })}
               className="flex items-center space-x-2"
             >
               <LogOut className="h-4 w-4" />

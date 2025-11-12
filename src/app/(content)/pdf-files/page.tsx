@@ -17,64 +17,64 @@ interface MarkdownFile {
 }
 
 export default function PdfFiles() {
-  const [isLoadingPdfFiles, setIsLoadingPdfFiles] = useState(false);
+  const [isLoadingPdfFiles, setIsLoadingPdfFiles] = useState(false); // global refresh flag
   const [pdfFiles, setPdfFiles] = useState<any[]>([]);
   const [isExtractingMarkdown, setIsExtractingMarkdown] = useState(false);
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [dbFiles, setDbFiles] = useState<any[]>([]);
   const [markdownFiles, setMarkdownFiles] = useState<MarkdownFile[]>([]);
 
+  // loadDbFiles just fetches and sets its own state
   const loadDbFiles = async () => {
     try {
       console.log("Loading database files...");
       const result = await getFiles();
       console.log("Files result:", result);
       if (result.success && result.files) {
-        setDbFiles(result.files);
+        setDbFiles(result.files); // This will trigger the useEffect
         console.log("Loaded", result.files.length, "files from database");
       } else {
         console.warn("getFiles returned no files or success=false", result);
+        setDbFiles([]); // Set to empty on failure to trigger effect
       }
     } catch (error) {
       console.error("Error loading files:", error);
-      toast.error("Failed to load DB files", {
-        description: "Please check the server or network",
-      });
+      toast.error("Failed to load DB files");
+      setDbFiles([]); // Set to empty on error to trigger effect
     }
   };
 
+  // loadMarkdownFiles just fetches and sets its own state
   const loadMarkdownFiles = async () => {
-    setIsLoadingFiles(true);
     try {
       const result = await listMarkdownFiles();
       console.log("listMarkdownFiles result:", result);
-      if (result.success) {
-        setMarkdownFiles(result.files || []);
+      if (result.success && result.files) {
+        setMarkdownFiles(result.files); // This will trigger the useEffect
       } else {
         toast.error("Failed to load markdown files", {
           description: result.error,
         });
+        setMarkdownFiles([]); // Set to empty on failure
       }
     } catch (error) {
       console.error("Error listing markdown files:", error);
-      toast.error("Failed to load files", {
-        description: "An unexpected error occurred",
-      });
-    } finally {
-      setIsLoadingFiles(false);
+      toast.error("Failed to load files");
+      setMarkdownFiles([]); // Set to empty on error
     }
   };
 
-  // Keep loadPdfFiles purely as "compute PDF file status from current state".
-  const loadPdfFiles = async () => {
-    console.log("Starting to compute PDF files from state...");
-    setIsLoadingPdfFiles(true);
-    try {
-      // Ensure dbFiles exists
-      if (!dbFiles || dbFiles.length === 0) {
-        console.log("No dbFiles found yet.");
-      }
+  // NEW: This effect runs whenever dbFiles or markdownFiles state changes.
+  // This is where we compute the derived pdfFiles state.
+  useEffect(() => {
+    console.log("Dependencies changed, computing PDF files...");
 
+    // We can skip computation if dbFiles isn't loaded yet,
+    // but the loading spinner will still be active.
+    if (!dbFiles) {
+      return;
+    }
+
+    try {
       const pdfFilesFromDb = (dbFiles || []).filter(
         (file) => file.fileType === "application/pdf"
       );
@@ -96,27 +96,26 @@ export default function PdfFiles() {
         };
       });
 
-      setPdfFiles(pdfFilesWithStatus);
+      setPdfFiles(pdfFilesWithStatus); // Update the final list
       console.log("Loaded PDF files with status:", pdfFilesWithStatus);
     } catch (error) {
-      console.error("Error loading PDF files:", error);
-      toast.error("Failed to load PDF files", {
-        description: "Please try again or check your connection",
-      });
+      console.error("Error computing PDF files:", error);
+      toast.error("Failed to process PDF file list");
     } finally {
       setIsLoadingPdfFiles(false);
       console.log("Finished computing PDF files");
     }
-  };
+  }, [dbFiles, markdownFiles]);
 
   const handleParsePdf = async (pdfFile: any) => {
     try {
       setIsExtractingMarkdown(true);
-
       const result = await extractMarkdownOnly(pdfFile.url);
 
       if (result.success) {
-        // After parsing, reload markdown list (and loadPdfFiles will react to it)
+        // SUCCESS: We only need to reload the markdown files.
+        // The useEffect hook will automatically re-compute the
+        // pdfFiles list and update the UI.
         await loadMarkdownFiles();
         toast.success("PDF parsed successfully!", {
           description: "Markdown file has been generated",
@@ -128,32 +127,32 @@ export default function PdfFiles() {
       }
     } catch (error) {
       console.error("Error parsing PDF:", error);
-      toast.error("Failed to parse PDF", {
-        description: "An unexpected error occurred",
-      });
+      toast.error("Failed to parse PDF");
     } finally {
       setIsExtractingMarkdown(false);
     }
   };
 
-  // On mount: load DB files and markdown files, then compute pdfFiles.
+  // REVISED: This function just sets the loading flag
+  // and kicks off the parallel data fetches.
+  const refreshAll = async () => {
+    setIsLoadingPdfFiles(true); // Turn spinner ON
+    try {
+      // Load both in parallel. When they finish, they will
+      // set their state, which will trigger the useEffect.
+      await Promise.all([loadDbFiles(), loadMarkdownFiles()]);
+    } catch (error) {
+      console.error("Error during refresh:", error);
+      // Ensure spinner turns off even if the fetches fail
+      setIsLoadingPdfFiles(false);
+    }
+  };
+
+  // This useEffect on mount is unchanged and correct.
   useEffect(() => {
-    (async () => {
-      await loadDbFiles();
-      await loadMarkdownFiles();
-      // loadPdfFiles will also run from the dependency effect below,
-      // but we can call it here as well to ensure immediate computation.
-      await loadPdfFiles();
-    })();
+    refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Whenever dbFiles or markdownFiles change, recompute pdfFiles.
-  useEffect(() => {
-    // only run when either has at least one item OR when either changes
-    loadPdfFiles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbFiles, markdownFiles]);
 
   return (
     <>
@@ -178,9 +177,7 @@ export default function PdfFiles() {
             <Button
               onClick={async () => {
                 try {
-                  // refresh database & markdown list; pdfFiles will recompute automatically
-                  await loadDbFiles();
-                  await loadMarkdownFiles();
+                  await refreshAll();
                 } catch (error) {
                   console.error("Error refreshing files:", error);
                   toast.error("Failed to refresh files", {
@@ -188,7 +185,7 @@ export default function PdfFiles() {
                   });
                 }
               }}
-              disabled={isLoadingPdfFiles || isLoadingFiles}
+              disabled={isLoadingPdfFiles}
               variant="outline"
               size="sm"
             >
@@ -251,6 +248,7 @@ export default function PdfFiles() {
                   key={file.id}
                   className="flex items-center justify-between p-4 light:bg-gray-50 dark:bg-slate-700 rounded-lg border light:border-gray-200 dark:border-slate-600 light:hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors"
                 >
+                  {/* ...rest of your existing rendering for each file (unchanged) */}
                   <div className="flex items-center space-x-3 flex-1 min-w-0">
                     <div className="w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center flex-shrink-0">
                       <svg

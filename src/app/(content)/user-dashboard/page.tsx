@@ -8,7 +8,7 @@ export default function UserDashboard() {
   return (
     <>
       <div className="space-y-6">
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 py-8">
           <h2 className="text-3xl font-bold light:text-gray-900 dark:text-white mb-2">
             Account
           </h2>
@@ -28,7 +28,7 @@ export default function UserDashboard() {
             </div>
             <Button
               variant="outline"
-              onClick={() => signOut({ callbackUrl: "/landing" })}
+              onClick={() => signOut({ callbackUrl: "/home" })}
             >
               Sign Out
             </Button>

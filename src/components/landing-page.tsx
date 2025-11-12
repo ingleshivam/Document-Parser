@@ -29,8 +29,20 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { ThemeButton } from "./theme-button";
+import { useSession } from "next-auth/react";
+import Loader from "./loader";
 
 export default function LandingPage() {
+  const { data: session, status } = useSession();
+
+  if (status === "loading") {
+    return (
+      <div className="w-full h-screen flex items-center justify-center ">
+        <Loader />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
@@ -46,14 +58,26 @@ export default function LandingPage() {
               </span>
             </div>
             <div className="flex items-center space-x-4">
-              <Link href="/auth/signin">
-                <Button
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Sign In
-                </Button>
-              </Link>
+              {status === "unauthenticated" ? (
+                <Link href="/auth/signin">
+                  <Button
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Sign In
+                  </Button>
+                </Link>
+              ) : (
+                <Link href="/dashboard">
+                  <Button
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Dashboard
+                  </Button>
+                </Link>
+              )}
+
               <ThemeButton />
             </div>
           </div>
