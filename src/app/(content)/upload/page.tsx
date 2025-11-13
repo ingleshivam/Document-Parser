@@ -278,10 +278,7 @@ export default function Page() {
                     </div>
                     <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white mb-2 text-center">
                       Upload a PDF
-                    </h3>
-                    <p className="text-sm light:text-gray-600 dark:text-gray-400 text-center">
-                      Select a PDF file to upload to Vercel Blob
-                    </p>
+                    </h3>{" "}
                   </div>
 
                   <div className="space-y-4">
@@ -404,11 +401,11 @@ export default function Page() {
                         </div>
                       )}
                     </Button>
-                    {uploadedUrl && (
+                    {/* {uploadedUrl && (
                       <p className="mt-3 text-xs light:text-gray-600 dark:text-gray-400 break-all text-center">
                         Uploaded to: {uploadedUrl}
                       </p>
-                    )}
+                    )} */}
                   </div>
                 </div>
               </div>
@@ -440,7 +437,7 @@ export default function Page() {
                         </h3>
                         <p className="text-sm light:text-gray-600 dark:text-gray-400">
                           Extract text from PDF, convert to markdown, and save
-                          to cloud storage
+                          to cloud.
                         </p>
                       </div>
                     </div>
@@ -477,8 +474,7 @@ export default function Page() {
                             await loadDbFiles();
 
                             toast.success("Markdown extracted and saved!", {
-                              description:
-                                "Markdown file has been saved to Vercel Blob",
+                              description: "Markdown file has been saved !",
                               duration: 3000,
                             });
                             // Refresh the markdown files list
@@ -787,11 +783,11 @@ export default function Page() {
                                 ? "Document Ready for Questions"
                                 : "Extracted Content"}
                             </h3>
-                            {result.sourceUrl && (
+                            {/* {result.sourceUrl && (
                               <p className="text-sm light:text-gray-600 dark:text-gray-400">
                                 Source: {result.sourceUrl}
                               </p>
-                            )}
+                            )} */}
                           </div>
                         </div>
                       </div>

@@ -19,6 +19,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { FileQuestionMark } from "lucide-react";
+import { storeMarkdownInQdrant } from "@/actions/storeMarkdownInQdrant";
 
 interface MarkdownFile {
   url: string;
@@ -64,6 +66,8 @@ export default function Files() {
   const [dbProcessedDocuments, setDbProcessedDocuments] = useState<
     DbProcessedDocument[]
   >([]);
+  const [isFileProcessingForQdrant, setIsFileProcessingForQdrant] =
+    useState(false);
   const loadMarkdownFiles = async () => {
     setIsLoadingFiles(true);
     try {
@@ -162,6 +166,33 @@ export default function Files() {
       }
     } catch (error) {
       console.error("Error loading processed documents:", error);
+    }
+  };
+
+  const processFile = async (fileUrl: string) => {
+    try {
+      setIsFileProcessingForQdrant(true);
+      const response = await fetch(fileUrl);
+      const textcontent = await response.text();
+      const status = await storeMarkdownInQdrant({
+        markdown: textcontent,
+        sourceUrl: fileUrl,
+      });
+      console.log("Status : ", status);
+      if (status.success) {
+        toast.success("Document ready for questions!", {
+          description: "Go to Chat with Docs section to ask questions",
+          duration: 4000,
+        });
+      } else {
+        toast.error("Failed to process document");
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        toast.error(error.message);
+      }
+    } finally {
+      setIsFileProcessingForQdrant(false);
     }
   };
 
@@ -333,7 +364,7 @@ export default function Files() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2">
                         <h4 className="font-medium light:text-gray-900 dark:text-white truncate">
-                          {file.sourceFileName || file.fileName}
+                          File Name : {file.sourceFileName || file.fileName}
                         </h4>
                         <svg
                           className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"
@@ -355,11 +386,11 @@ export default function Files() {
                           />
                         </svg>
                       </div>
-                      <p className="text-sm light:text-gray-500 dark:text-gray-400 truncate">
+                      {/* <p className="text-sm light:text-gray-500 dark:text-gray-400 truncate">
                         {file.sourceUrl
                           ? `From: ${file.sourceUrl}`
                           : "Markdown file"}
-                      </p>
+                      </p> */}
                       <div className="flex items-center space-x-2 text-xs light:text-gray-600 dark:text-gray-400 mt-1">
                         <span>{(file.size / 1024).toFixed(1)} KB</span>
                         <span>•</span>
@@ -422,6 +453,27 @@ export default function Files() {
                       </svg>
                       <span className="ml-1">Delete</span>
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        processFile(file.url);
+                      }}
+                    >
+                      <span className="ml-1">
+                        {isFileProcessingForQdrant ? (
+                          <div className="flex gap-3">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                            <p>Processing...</p>
+                          </div>
+                        ) : (
+                          <p className="flex gap-3">
+                            <FileQuestionMark /> Ask Questions
+                          </p>
+                        )}
+                      </span>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -438,7 +490,7 @@ export default function Files() {
                 : "File Preview"}
             </SheetTitle>
             <SheetDescription>
-              {previewFile?.sourceUrl && `Source: ${previewFile.sourceUrl}`}
+              {/* {previewFile?.sourceUrl && `Source: ${previewFile.sourceUrl}`} */}
             </SheetDescription>
           </SheetHeader>
 
