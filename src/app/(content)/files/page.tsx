@@ -75,6 +75,10 @@ export default function Files() {
   const [isFileProcessingForQdrant, setIsFileProcessingForQdrant] =
     useState(false);
   const [dbFiles, setDbFiles] = useState<any[]>([]);
+  const [processingFileUrl, setProcessingFileUrl] = useState<string | null>(
+    null
+  );
+
   console.log("dbFiles : ", dbFiles);
   console.log("markdownFiles : ", markdownFiles);
 
@@ -195,19 +199,19 @@ export default function Files() {
 
   const processFile = async (fileUrl: string, sourceUrl: string) => {
     try {
-      setIsFileProcessingForQdrant(true);
+      // mark this file as processing (per-file)
+      setProcessingFileUrl(fileUrl);
+      setIsFileProcessingForQdrant(true); // optional if you still need global flag elsewhere
+
       const response = await fetch(fileUrl);
       const textcontent = await response.text();
       const processRes = await storeMarkdownInQdrant({
         markdown: textcontent,
         sourceUrl: fileUrl,
       });
-      console.log("Status : ", processRes);
+
       if (processRes.success) {
         const existingPdfFile = dbFiles.find((file) => file.url === sourceUrl);
-
-        console.log("EXISTING PDF FILE : ", existingPdfFile);
-
         const processedDocId = `processed_${Date.now()}`;
 
         const processDocResult = await createProcessedDocument({
@@ -224,24 +228,26 @@ export default function Files() {
             description: "Go to Chat with Docs section to ask questions",
             duration: 4000,
           });
-          loadMarkdownFiles();
+          // refresh lists
+          await loadMarkdownFiles();
+          await loadDbProcessedDocuments();
         } else {
-          toast.error("Error !", {
-            description: "Failed to process document, Please try agaimn !",
-            duration: 4000,
-          });
+          console.error(
+            "Error creating processed doc:",
+            processDocResult.error
+          );
+          toast.error("Failed to register processed document");
         }
       } else {
-        toast.error("Error !", {
-          description: "Failed to process document, Please try agaimn !",
-        });
+        console.error("Error storing markdown in Qdrant:", processRes.error);
+        toast.error("Failed to process document");
       }
     } catch (error) {
-      if (error instanceof Error) {
-        toast.error(error.message);
-      }
+      if (error instanceof Error) toast.error(error.message);
+      else toast.error("Unexpected error while processing file");
     } finally {
       setIsFileProcessingForQdrant(false);
+      setProcessingFileUrl(null);
     }
   };
 
@@ -518,40 +524,79 @@ export default function Files() {
                       <TooltipTrigger asChild>
                         <Button
                           size="sm"
-                          variant="outline"
-                          disabled={isFileProcessingForQdrant}
+                          variant="outline" // keep a valid variant
+                          // style the processed state with Tailwind classes
+                          className={
+                            isFileProcessed(file.url)
+                              ? "text-green-600 bg-green-50 hover:bg-green-100"
+                              : ""
+                          }
+                          // only disable when this specific file is being processed
+                          disabled={processingFileUrl === file.url}
                           onClick={(e) => {
                             e.stopPropagation();
-                            processFile(
-                              file.url,
-                              file.sourceUrl ? file.sourceUrl : ""
-                            );
+                            // guard: don't re-process if already processing
+                            if (
+                              processingFileUrl === file.url ||
+                              isFileProcessed(file.url)
+                            )
+                              return;
+                            processFile(file.url, file.sourceUrl ?? "");
                           }}
+                          aria-label={
+                            processingFileUrl === file.url
+                              ? `Processing ${
+                                  file.sourceFileName ?? file.fileName
+                                }`
+                              : isFileProcessed(file.url)
+                              ? `${
+                                  file.sourceFileName ?? file.fileName
+                                } processed`
+                              : `Process ${
+                                  file.sourceFileName ?? file.fileName
+                                }`
+                          }
+                          title={
+                            processingFileUrl === file.url
+                              ? "Processing..."
+                              : isFileProcessed(file.url)
+                              ? "Processed"
+                              : "Process file"
+                          }
                         >
-                          <span className="ml-1">
-                            {isFileProcessingForQdrant ? (
-                              <div className="flex gap-3">
-                                <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
-                                <p>Processing...</p>
-                              </div>
-                            ) : isFileProcessed(file.url) ? (
-                              <p className="flex gap-3">
-                                <CircleCheckBig />
-                                Processed
-                              </p>
-                            ) : (
-                              <p className="flex gap-3">
-                                <FileInput /> Process
-                              </p>
-                            )}
-                          </span>
+                          {processingFileUrl === file.url ? (
+                            <span className="flex items-center gap-2">
+                              <span className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin inline-block" />
+                              <span>Processing…</span>
+                            </span>
+                          ) : isFileProcessed(file.url) ? (
+                            <span className="flex items-center gap-2">
+                              <CircleCheckBig className="inline-block" />
+                              <span>Processed</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-2">
+                              <FileInput className="inline-block" />
+                              <span>Process</span>
+                            </span>
+                          )}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>
-                        {isFileProcessed(file.url) ? (
-                          <p>The file is ready to ask questions! </p>
+
+                      {/* TooltipContent appears on hover — adjust text + color when processed */}
+                      <TooltipContent side="top">
+                        {processingFileUrl === file.url ? (
+                          <div className="text-sm">
+                            Processing file — please wait…
+                          </div>
+                        ) : isFileProcessed(file.url) ? (
+                          <div className="text-sm">
+                            ✔ File is ready to ask questions!
+                          </div>
                         ) : (
-                          <p>Process the file to ask questions.</p>
+                          <div className="text-sm">
+                            Click to process this file.
+                          </div>
                         )}
                       </TooltipContent>
                     </Tooltip>

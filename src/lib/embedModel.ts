@@ -1,12 +1,12 @@
 // lib/HuggingFaceAPIEmbedding.ts
-import { InferenceClient } from "@huggingface/inference";
 
+import { InferenceClient } from "@huggingface/inference";
 export class HuggingFaceAPIEmbedding {
   private client: InferenceClient;
   private model: string;
 
   constructor(model = "intfloat/multilingual-e5-large-instruct") {
-    this.client = new InferenceClient(process.env.HF_TOKEN!);
+    this.client = new InferenceClient(process.env.hf_token!!);
     this.model = model;
   }
 
@@ -16,6 +16,8 @@ export class HuggingFaceAPIEmbedding {
       inputs: text,
       provider: "hf-inference",
     });
+
+    // console.log("RES :", res);
 
     if (Array.isArray(res) && Array.isArray(res[0])) {
       return res[0] as number[];
