@@ -19,8 +19,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { FileQuestionMark } from "lucide-react";
+import { CircleCheckBig, FileInput, FileQuestionMark } from "lucide-react";
 import { storeMarkdownInQdrant } from "@/actions/storeMarkdownInQdrant";
+import { getFiles } from "@/actions/db-files";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface MarkdownFile {
   url: string;
@@ -68,6 +74,24 @@ export default function Files() {
   >([]);
   const [isFileProcessingForQdrant, setIsFileProcessingForQdrant] =
     useState(false);
+  const [dbFiles, setDbFiles] = useState<any[]>([]);
+  console.log("dbFiles : ", dbFiles);
+  console.log("markdownFiles : ", markdownFiles);
+
+  const loadDbFiles = async () => {
+    try {
+      console.log("Loading database files...");
+      const result = await getFiles();
+      console.log("Files result:", result);
+      if (result.success && result.files) {
+        setDbFiles(result.files);
+        console.log("Loaded", result.files.length, "files from database");
+      }
+    } catch (error) {
+      console.error("Error loading files:", error);
+    }
+  };
+
   const loadMarkdownFiles = async () => {
     setIsLoadingFiles(true);
     try {
@@ -169,23 +193,48 @@ export default function Files() {
     }
   };
 
-  const processFile = async (fileUrl: string) => {
+  const processFile = async (fileUrl: string, sourceUrl: string) => {
     try {
       setIsFileProcessingForQdrant(true);
       const response = await fetch(fileUrl);
       const textcontent = await response.text();
-      const status = await storeMarkdownInQdrant({
+      const processRes = await storeMarkdownInQdrant({
         markdown: textcontent,
         sourceUrl: fileUrl,
       });
-      console.log("Status : ", status);
-      if (status.success) {
-        toast.success("Document ready for questions!", {
-          description: "Go to Chat with Docs section to ask questions",
-          duration: 4000,
+      console.log("Status : ", processRes);
+      if (processRes.success) {
+        const existingPdfFile = dbFiles.find((file) => file.url === sourceUrl);
+
+        console.log("EXISTING PDF FILE : ", existingPdfFile);
+
+        const processedDocId = `processed_${Date.now()}`;
+
+        const processDocResult = await createProcessedDocument({
+          id: processedDocId,
+          fileName: existingPdfFile?.fileName,
+          fileUrl: fileUrl,
+          chunkCount: processRes.points || 0,
+          pageCount: existingPdfFile?.pageCount || 0,
+          sourceUrl: fileUrl,
         });
+
+        if (processDocResult.success) {
+          toast.success("Document ready for questions!", {
+            description: "Go to Chat with Docs section to ask questions",
+            duration: 4000,
+          });
+          loadMarkdownFiles();
+        } else {
+          toast.error("Error !", {
+            description: "Failed to process document, Please try agaimn !",
+            duration: 4000,
+          });
+        }
       } else {
-        toast.error("Failed to process document");
+        toast.error("Error !", {
+          description: "Failed to process document, Please try agaimn !",
+        });
       }
     } catch (error) {
       if (error instanceof Error) {
@@ -249,10 +298,21 @@ export default function Files() {
     }
   };
 
+  const isFileProcessed = (fileUrl: string) => {
+    const processedDoc = dbProcessedDocuments.find(
+      (doc) => doc.fileUrl === fileUrl
+    );
+    if (processedDoc) {
+      return true;
+    } else {
+      return false;
+    }
+  };
+
   useEffect(() => {
     loadMarkdownFiles();
     loadConversations();
-    // loadDbFiles();
+    loadDbFiles();
     loadDbProcessedDocuments();
   }, []);
 
@@ -366,6 +426,7 @@ export default function Files() {
                         <h4 className="font-medium light:text-gray-900 dark:text-white truncate">
                           File Name : {file.sourceFileName || file.fileName}
                         </h4>
+                        <p>{}</p>
                         <svg
                           className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"
                           fill="none"
@@ -453,27 +514,47 @@ export default function Files() {
                       </svg>
                       <span className="ml-1">Delete</span>
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        processFile(file.url);
-                      }}
-                    >
-                      <span className="ml-1">
-                        {isFileProcessingForQdrant ? (
-                          <div className="flex gap-3">
-                            <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
-                            <p>Processing...</p>
-                          </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isFileProcessingForQdrant}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            processFile(
+                              file.url,
+                              file.sourceUrl ? file.sourceUrl : ""
+                            );
+                          }}
+                        >
+                          <span className="ml-1">
+                            {isFileProcessingForQdrant ? (
+                              <div className="flex gap-3">
+                                <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                                <p>Processing...</p>
+                              </div>
+                            ) : isFileProcessed(file.url) ? (
+                              <p className="flex gap-3">
+                                <CircleCheckBig />
+                                Processed
+                              </p>
+                            ) : (
+                              <p className="flex gap-3">
+                                <FileInput /> Process
+                              </p>
+                            )}
+                          </span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isFileProcessed(file.url) ? (
+                          <p>The file is ready to ask questions! </p>
                         ) : (
-                          <p className="flex gap-3">
-                            <FileQuestionMark /> Ask Questions
-                          </p>
+                          <p>Process the file to ask questions.</p>
                         )}
-                      </span>
-                    </Button>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
               ))}

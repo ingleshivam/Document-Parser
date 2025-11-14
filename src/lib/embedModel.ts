@@ -5,7 +5,7 @@ export class HuggingFaceAPIEmbedding {
   private client: InferenceClient;
   private model: string;
 
-  constructor(model = "intfloat/multilingual-e5-large") {
+  constructor(model = "intfloat/multilingual-e5-large-instruct") {
     this.client = new InferenceClient(process.env.HF_TOKEN!);
     this.model = model;
   }

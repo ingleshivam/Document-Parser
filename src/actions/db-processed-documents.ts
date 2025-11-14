@@ -14,6 +14,7 @@ export async function createProcessedDocument(data: {
   sourceFileName?: string;
 }) {
   try {
+    console.log("FILE DATA : ", data);
     // Get current user session
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
