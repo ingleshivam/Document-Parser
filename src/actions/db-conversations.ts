@@ -8,7 +8,9 @@ export async function createConversation(data: {
   id: string;
   title: string;
   fileId?: string;
+  processedFileId?: string;
 }) {
+  console.log("Conversation Data : ", data);
   try {
     // Get current user session
     const session = await getServerSession(authOptions);
@@ -23,6 +25,7 @@ export async function createConversation(data: {
         id: data.id,
         title: data.title,
         fileId: data.fileId,
+        documentId: data.processedFileId,
         userId: userId,
         updatedAt: new Date(),
       },
@@ -95,6 +98,7 @@ export async function updateConversation(
   data: {
     title?: string;
     fileId?: string;
+    processedFileId?: string;
   }
 ) {
   try {
@@ -112,7 +116,10 @@ export async function updateConversation(
         userId: userId,
       },
       data: {
-        ...data,
+        title: data.title,
+        fileId: data.fileId,
+        documentId: data.processedFileId,
+        userId: userId,
         updatedAt: new Date(),
       },
     });

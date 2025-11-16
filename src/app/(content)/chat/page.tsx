@@ -56,10 +56,13 @@ export default function Chat() {
   const [processedDocuments, setProcessedDocuments] = useState<
     DbProcessedDocument[]
   >([]);
+  console.log("1processedDocuments : ", processedDocuments);
   const [dbProcessedDocuments, setDbProcessedDocuments] = useState<
     DbProcessedDocument[]
   >([]);
   const [dbFiles, setDbFiles] = useState<any[]>([]);
+  console.log("1dbFiles : ", dbFiles);
+
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const loadConversation = async (conversationId: string) => {
@@ -166,7 +169,17 @@ export default function Chat() {
         const isNewConversation = !currentConversationId;
 
         // Find the corresponding file in the database
-        const correspondingFile = dbFiles.find(
+        const processedFile = processedDocuments.find(
+          (file) =>
+            file.sourceUrl ===
+              (selectedDocument.sourceUrl || selectedDocument.fileUrl) ||
+            file.fileUrl ===
+              (selectedDocument.sourceUrl || selectedDocument.fileUrl) ||
+            file.fileName === selectedDocument.fileName ||
+            file.sourceFileName === selectedDocument.fileName
+        );
+
+        const mainFile = dbFiles.find(
           (file) =>
             file.sourceUrl ===
               (selectedDocument.sourceUrl || selectedDocument.fileUrl) ||
@@ -190,7 +203,8 @@ export default function Chat() {
             sourceFileName: f.sourceFileName,
           }))
         );
-        console.log("Found corresponding file:", correspondingFile);
+        console.log("Found main file:", mainFile);
+        console.log("Found processed file:", processedFile);
 
         const conversation: Conversation = {
           id: conversationId,
@@ -209,8 +223,11 @@ export default function Chat() {
           updatedAt: new Date().toISOString(),
         };
 
-        // Pass the fileId to saveConversation (null if no file found)
-        await saveConversation(conversation, correspondingFile?.id || null);
+        await saveConversation(
+          conversation,
+          mainFile?.id || null,
+          processedFile?.id || null
+        );
         setCurrentConversationId(conversationId);
       } else {
         toast.error("Failed to get answer", {
@@ -228,7 +245,8 @@ export default function Chat() {
 
   const saveConversation = async (
     conversation: Conversation,
-    fileId?: string | null
+    fileId?: string | null,
+    processedFileId?: string | null
   ) => {
     try {
       console.log(
@@ -246,17 +264,17 @@ export default function Chat() {
         conversation.id
       );
 
-      // Check if conversation already exists
       const existingConversation = conversations.find(
         (c) => c.id === conversation.id
       );
 
       if (existingConversation) {
         console.log("Updating existing conversation");
-        // Update existing conversation
+
         await updateConversation(conversation.id, {
           title: conversation.title,
           fileId: fileId || undefined,
+          processedFileId: processedFileId || undefined,
         });
       } else {
         console.log("Creating new conversation");
@@ -265,6 +283,7 @@ export default function Chat() {
           id: conversation.id,
           title: conversation.title,
           fileId: fileId || undefined,
+          processedFileId: processedFileId || undefined,
         });
 
         if (!convResult.success) {
@@ -366,16 +385,37 @@ export default function Chat() {
       return;
     }
 
+    console.log("Document ID : ", documentId);
+
     try {
       const result = await deleteProcessedDocumentWithQdrant(
         documentId,
         sourceUrl
       );
       if (result.success) {
-        // Reload processed documents and conversations
+        // const relatedConversations = conversations.filter(
+        //   (conv) =>
+        //     conv.documentTitle === fileName ||
+        //     conv.documentTitle.includes(fileName.replace(".md", ""))
+        // );
+
+        // for (const conversation of relatedConversations) {
+        //   try {
+        //     await deleteProcessedDocumentWithQdrant(
+        //       conversation.documentId,
+        //       conversation.documentTitle
+        //     );
+        //     console.log(
+        //       "Deleted chat history for conversation:",
+        //       conversation.id
+        //     );
+        //   } catch (error) {
+        //     console.error("Error deleting chat history:", error);
+        //   }
+        // }
         await loadProcessedDocuments();
         await loadConversations();
-        // Trigger refresh for Overview page
+
         setRefreshTrigger((prev) => prev + 1);
         toast.success("Document deleted successfully", {
           description: result.message,

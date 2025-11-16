@@ -81,6 +81,7 @@ export default function Files() {
 
   console.log("dbFiles : ", dbFiles);
   console.log("markdownFiles : ", markdownFiles);
+  console.log("dbProcessedDocuments : ", dbProcessedDocuments);
 
   const loadDbFiles = async () => {
     try {
@@ -145,29 +146,27 @@ export default function Files() {
       if (result.success) {
         setMarkdownFiles((prev) => prev.filter((file) => file.url !== url));
 
-        // Delete related chat history
-        const relatedConversations = conversations.filter(
-          (conv) =>
-            conv.documentTitle === fileName ||
-            conv.documentTitle.includes(fileName.replace(".md", ""))
-        );
+        // const relatedConversations = conversations.filter(
+        //   (conv) =>
+        //     conv.documentTitle === fileName ||
+        //     conv.documentTitle.includes(fileName.replace(".md", ""))
+        // );
 
-        for (const conversation of relatedConversations) {
-          try {
-            await deleteProcessedDocumentWithQdrant(
-              conversation.documentId,
-              conversation.documentTitle
-            );
-            console.log(
-              "Deleted chat history for conversation:",
-              conversation.id
-            );
-          } catch (error) {
-            console.error("Error deleting chat history:", error);
-          }
-        }
+        // for (const conversation of relatedConversations) {
+        //   try {
+        //     await deleteProcessedDocumentWithQdrant(
+        //       conversation.documentId,
+        //       conversation.documentTitle
+        //     );
+        //     console.log(
+        //       "Deleted chat history for conversation:",
+        //       conversation.id
+        //     );
+        //   } catch (error) {
+        //     console.error("Error deleting chat history:", error);
+        //   }
+        // }
 
-        // Reload conversations and trigger refresh
         await loadConversations();
         setRefreshTrigger((prev) => prev + 1);
 
@@ -199,9 +198,8 @@ export default function Files() {
 
   const processFile = async (fileUrl: string, sourceUrl: string) => {
     try {
-      // mark this file as processing (per-file)
       setProcessingFileUrl(fileUrl);
-      setIsFileProcessingForQdrant(true); // optional if you still need global flag elsewhere
+      setIsFileProcessingForQdrant(true);
 
       const response = await fetch(fileUrl);
       const textcontent = await response.text();
@@ -228,7 +226,6 @@ export default function Files() {
             description: "Go to Chat with Docs section to ask questions",
             duration: 4000,
           });
-          // refresh lists
           await loadMarkdownFiles();
           await loadDbProcessedDocuments();
         } else {
@@ -304,15 +301,12 @@ export default function Files() {
     }
   };
 
-  const isFileProcessed = (fileUrl: string) => {
-    const processedDoc = dbProcessedDocuments.find(
-      (doc) => doc.fileUrl === fileUrl
+  const isFileProcessed = (fileUrl: string, sourceUrl = ""): boolean => {
+    return dbProcessedDocuments.some((doc) =>
+      [fileUrl, sourceUrl].some(
+        (u) => u && (doc.fileUrl === u || doc.sourceUrl === u)
+      )
     );
-    if (processedDoc) {
-      return true;
-    } else {
-      return false;
-    }
   };
 
   useEffect(() => {
@@ -405,36 +399,26 @@ export default function Files() {
             </div>
           ) : (
             <div className="space-y-3">
-              {markdownFiles.map((file) => (
-                <div
-                  key={file.url}
-                  className="flex items-center justify-between p-4 light:bg-gray-50 dark:bg-slate-700 rounded-lg border light:border-gray-200 dark:border-slate-600 light:hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors cursor-pointer group"
-                  onClick={() => handlePreviewFile(file)}
-                >
-                  <div className="flex items-center space-x-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg
-                        className="w-5 h-5 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2">
-                        <h4 className="font-medium light:text-gray-900 dark:text-white truncate">
-                          File Name : {file.sourceFileName || file.fileName}
-                        </h4>
-                        <p>{}</p>
+              {markdownFiles.map((file) => {
+                const isProcessed =
+                  dbProcessedDocuments.some(
+                    (doc) =>
+                      doc.fileUrl === file.url ||
+                      (file.sourceUrl && doc.sourceUrl === file.sourceUrl)
+                  ) || null;
+
+                const isProcessing = processingFileUrl === file.url;
+
+                return (
+                  <div
+                    key={file.url}
+                    className="flex items-center justify-between p-4 light:bg-gray-50 dark:bg-slate-700 rounded-lg border light:border-gray-200 dark:border-slate-600 light:hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors cursor-pointer group"
+                    onClick={() => handlePreviewFile(file)}
+                  >
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
                         <svg
-                          className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"
+                          className="w-5 h-5 text-white"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -443,166 +427,168 @@ export default function Files() {
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                          />
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                           />
                         </svg>
                       </div>
-                      {/* <p className="text-sm light:text-gray-500 dark:text-gray-400 truncate">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-medium light:text-gray-900 dark:text-white truncate">
+                            File Name : {file.sourceFileName || file.fileName}
+                          </h4>
+                          <p>{}</p>
+                          <svg
+                            className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                            />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                            />
+                          </svg>
+                        </div>
+                        {/* <p className="text-sm light:text-gray-500 dark:text-gray-400 truncate">
                         {file.sourceUrl
                           ? `From: ${file.sourceUrl}`
                           : "Markdown file"}
                       </p> */}
-                      <div className="flex items-center space-x-2 text-xs light:text-gray-600 dark:text-gray-400 mt-1">
-                        <span>{(file.size / 1024).toFixed(1)} KB</span>
-                        <span>•</span>
-                        <span>
-                          {new Date(file.uploadedAt).toLocaleDateString()}
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center">
-                          <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                          Success
-                        </span>
+                        <div className="flex items-center space-x-2 text-xs light:text-gray-600 dark:text-gray-400 mt-1">
+                          <span>{(file.size / 1024).toFixed(1)} KB</span>
+                          <span>•</span>
+                          <span>
+                            {new Date(file.uploadedAt).toLocaleDateString()}
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center">
+                            <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                            Success
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-2 flex-shrink-0">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(file.downloadUrl, "_blank");
-                      }}
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                      <span className="ml-1">Download</span>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteMarkdownFile(file.url, file.fileName);
-                      }}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                      <span className="ml-1">Delete</span>
-                    </Button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline" // keep a valid variant
-                          // style the processed state with Tailwind classes
-                          className={
-                            isFileProcessed(file.url)
-                              ? "text-green-600 bg-green-50 hover:bg-green-100"
-                              : ""
-                          }
-                          // only disable when this specific file is being processed
-                          disabled={processingFileUrl === file.url}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // guard: don't re-process if already processing
-                            if (
-                              processingFileUrl === file.url ||
-                              isFileProcessed(file.url)
-                            )
-                              return;
-                            processFile(file.url, file.sourceUrl ?? "");
-                          }}
-                          aria-label={
-                            processingFileUrl === file.url
-                              ? `Processing ${
-                                  file.sourceFileName ?? file.fileName
-                                }`
-                              : isFileProcessed(file.url)
-                              ? `${
-                                  file.sourceFileName ?? file.fileName
-                                } processed`
-                              : `Process ${
-                                  file.sourceFileName ?? file.fileName
-                                }`
-                          }
-                          title={
-                            processingFileUrl === file.url
-                              ? "Processing..."
-                              : isFileProcessed(file.url)
-                              ? "Processed"
-                              : "Process file"
-                          }
-                        >
-                          {processingFileUrl === file.url ? (
-                            <span className="flex items-center gap-2">
-                              <span className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin inline-block" />
-                              <span>Processing…</span>
-                            </span>
-                          ) : isFileProcessed(file.url) ? (
-                            <span className="flex items-center gap-2">
-                              <CircleCheckBig className="inline-block" />
-                              <span>Processed</span>
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-2">
-                              <FileInput className="inline-block" />
-                              <span>Process</span>
-                            </span>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
 
-                      {/* TooltipContent appears on hover — adjust text + color when processed */}
-                      <TooltipContent side="top">
-                        {processingFileUrl === file.url ? (
-                          <div className="text-sm">
-                            Processing file — please wait…
-                          </div>
-                        ) : isFileProcessed(file.url) ? (
-                          <div className="text-sm">
-                            ✔ File is ready to ask questions!
-                          </div>
-                        ) : (
-                          <div className="text-sm">
-                            Click to process this file.
-                          </div>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(file.downloadUrl, "_blank");
+                        }}
+                      >
+                        {/* download icon */}
+                        <span className="ml-1">Download</span>
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteMarkdownFile(file.url, file.fileName);
+                        }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      >
+                        <span className="ml-1">Delete</span>
+                      </Button>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            // use computed boolean rather than setting state in render
+                            className={
+                              isProcessed
+                                ? "text-green-600 bg-green-50 hover:bg-green-100"
+                                : ""
+                            }
+                            disabled={isProcessing || !isProcessed}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // set selected file only here (user action), if you need it globally
+                              // setFileUrl({
+                              //   fileUrl: file.url,
+                              //   sourceUrl: file.sourceUrl ?? "",
+                              // });
+
+                              if (isProcessing || isProcessed) return;
+
+                              // call processing
+                              processFile(file.url, file.sourceUrl ?? "");
+                            }}
+                            aria-label={
+                              isProcessing
+                                ? `Processing ${
+                                    file.sourceFileName ?? file.fileName
+                                  }`
+                                : isProcessed
+                                ? `${
+                                    file.sourceFileName ?? file.fileName
+                                  } processed`
+                                : `Process ${
+                                    file.sourceFileName ?? file.fileName
+                                  }`
+                            }
+                            title={
+                              isProcessing
+                                ? "Processing..."
+                                : isProcessed
+                                ? "Processed"
+                                : "Process file"
+                            }
+                          >
+                            {isProcessing ? (
+                              <span className="flex items-center gap-2">
+                                <span className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin inline-block" />
+                                <span>Processing…</span>
+                              </span>
+                            ) : isProcessed === null ? (
+                              <>Loading...</>
+                            ) : isProcessed ? (
+                              <span className="flex items-center gap-2">
+                                <CircleCheckBig className="inline-block" />
+                                <span>Processed</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-2">
+                                <FileInput className="inline-block" />
+                                <span>Process</span>
+                              </span>
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+
+                        <TooltipContent side="top">
+                          {isProcessing ? (
+                            <div className="text-sm">
+                              Processing file — please wait…
+                            </div>
+                          ) : isProcessed ? (
+                            <div className="text-sm">
+                              ✔ File is ready to ask questions!
+                            </div>
+                          ) : (
+                            <div className="text-sm">
+                              Click to process this file.
+                            </div>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
