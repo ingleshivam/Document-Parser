@@ -20,7 +20,7 @@ export async function deleteProcessedDocumentWithQdrant(
 
     // 2. Delete all conversations related to this document
     const conversations = await prisma.conversations.findMany({
-      where: { fileId: documentId },
+      where: { documentId: documentId },
     });
 
     for (const conversation of conversations) {

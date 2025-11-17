@@ -400,12 +400,13 @@ export default function Files() {
           ) : (
             <div className="space-y-3">
               {markdownFiles.map((file) => {
-                const isProcessed =
-                  dbProcessedDocuments.some(
-                    (doc) =>
-                      doc.fileUrl === file.url ||
-                      (file.sourceUrl && doc.sourceUrl === file.sourceUrl)
-                  ) || null;
+                let isProcessed = null;
+
+                isProcessed = dbProcessedDocuments.some(
+                  (doc) =>
+                    doc.fileUrl === file.url ||
+                    (file.sourceUrl && doc.sourceUrl === file.sourceUrl)
+                );
 
                 const isProcessing = processingFileUrl === file.url;
 
@@ -513,7 +514,7 @@ export default function Files() {
                                 ? "text-green-600 bg-green-50 hover:bg-green-100"
                                 : ""
                             }
-                            disabled={isProcessing || !isProcessed}
+                            disabled={isProcessing || isProcessed}
                             onClick={(e) => {
                               e.stopPropagation();
                               // set selected file only here (user action), if you need it globally
