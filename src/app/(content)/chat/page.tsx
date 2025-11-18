@@ -19,6 +19,8 @@ import {
   getProcessedDocuments as getDbProcessedDocuments,
 } from "@/actions/db-processed-documents";
 import { getFiles } from "@/actions/db-files";
+import { FileInput, Files, MessageSquare } from "lucide-react";
+import ConfirmBox from "@/components/confirm-box";
 
 export interface Conversation {
   id: string;
@@ -372,65 +374,67 @@ export default function Chat() {
     }
   };
 
-  const handleDeleteProcessedDocument = async (
-    documentId: string,
-    sourceUrl: string,
-    documentTitle: string
-  ) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete "${documentTitle}"? This will permanently remove the document and all related chat history.`
-      )
-    ) {
-      return;
-    }
+  // const handleDeleteProcessedDocument = async (
+  //   documentId: string,
+  //   sourceUrl: string,
+  //   documentTitle: string
+  // ) => {
+  //   // if (
+  //   //   !confirm(
+  //   //     `Are you sure you want to delete "${documentTitle}"? This will permanently remove the document and all related chat history.`
+  //   //   )
+  //   // ) {
+  //   //   return;
+  //   // }
+  //   <ConfirmBox />;
 
-    console.log("Document ID : ", documentId);
+  //   console.log("Document ID : ", documentId);
 
-    try {
-      const result = await deleteProcessedDocumentWithQdrant(
-        documentId,
-        sourceUrl
-      );
-      if (result.success) {
-        // const relatedConversations = conversations.filter(
-        //   (conv) =>
-        //     conv.documentTitle === fileName ||
-        //     conv.documentTitle.includes(fileName.replace(".md", ""))
-        // );
+  //   // try {
+  //   //   const result = await deleteProcessedDocumentWithQdrant(
+  //   //     documentId,
+  //   //     sourceUrl
+  //   //   );
+  //   //   if (result.success) {
+  //   //     // const relatedConversations = conversations.filter(
+  //   //     //   (conv) =>
+  //   //     //     conv.documentTitle === fileName ||
+  //   //     //     conv.documentTitle.includes(fileName.replace(".md", ""))
+  //   //     // );
 
-        // for (const conversation of relatedConversations) {
-        //   try {
-        //     await deleteProcessedDocumentWithQdrant(
-        //       conversation.documentId,
-        //       conversation.documentTitle
-        //     );
-        //     console.log(
-        //       "Deleted chat history for conversation:",
-        //       conversation.id
-        //     );
-        //   } catch (error) {
-        //     console.error("Error deleting chat history:", error);
-        //   }
-        // }
-        await loadProcessedDocuments();
-        await loadConversations();
+  //   //     // for (const conversation of relatedConversations) {
+  //   //     //   try {
+  //   //     //     await deleteProcessedDocumentWithQdrant(
+  //   //     //       conversation.documentId,
+  //   //     //       conversation.documentTitle
+  //   //     //     );
+  //   //     //     console.log(
+  //   //     //       "Deleted chat history for conversation:",
+  //   //     //       conversation.id
+  //   //     //     );
+  //   //     //   } catch (error) {
+  //   //     //     console.error("Error deleting chat history:", error);
+  //   //     //   }
+  //   //     // }
+  //   //     await loadProcessedDocuments();
+  //   //     await loadConversations();
+  //   //     setSelectedDocument(null);
 
-        setRefreshTrigger((prev) => prev + 1);
-        toast.success("Document deleted successfully", {
-          description: result.message,
-        });
-      } else {
-        toast.error("Failed to delete document", {
-          description: result.error,
-        });
-      }
-    } catch (error) {
-      toast.error("Failed to delete document", {
-        description: "An unexpected error occurred",
-      });
-    }
-  };
+  //   //     setRefreshTrigger((prev) => prev + 1);
+  //   //     toast.success("Document deleted successfully", {
+  //   //       description: result.message,
+  //   //     });
+  //   //   } else {
+  //   //     toast.error("Failed to delete document", {
+  //   //       description: result.error,
+  //   //     });
+  //   //   }
+  //   // } catch (error) {
+  //   //   toast.error("Failed to delete document", {
+  //   //     description: "An unexpected error occurred",
+  //   //   });
+  //   // }
+  // };
 
   const loadConversations = async () => {
     try {
@@ -498,6 +502,19 @@ export default function Chat() {
     loadDbFiles();
   }, []);
 
+  const handleRefresh = async (status: boolean) => {
+    if (status) {
+      await loadProcessedDocuments();
+      await loadConversations();
+      setSelectedDocument(null);
+
+      setRefreshTrigger((prev) => prev + 1);
+      toast.success("Document deleted successfully", {
+        // description: result.message,
+      });
+    }
+  };
+
   return (
     <>
       <div className="h-[calc(100vh-8rem)] flex flex-col ">
@@ -516,16 +533,16 @@ export default function Chat() {
           <div className="col-span-1 lg:col-span-1 flex flex-col order-first mb-5 min-h-0">
             <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 flex flex-col h-full min-h-0">
               {/* Conversation History Header */}
-              <div className="px-4 py-3 border-b light:border-gray-200 dark:border-slate-600 flex-shrink-0">
+              <div className="px-4 py-[24px] border-b light:border-gray-200 dark:border-slate-600 flex-shrink-0">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold light:text-gray-900 dark:text-white">
+                  <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white">
                     Chat History
                   </h3>
                   <Button
                     onClick={startNewConversation}
                     variant="outline"
                     size="sm"
-                    className="h-6 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                   >
                     <svg
                       className="w-3 h-3 mr-1"
@@ -548,8 +565,18 @@ export default function Chat() {
               {/* Conversation List */}
               <div className="flex-1 overflow-y-auto p-2">
                 {conversations.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-muted-foreground">
-                    No conversations yet
+                  <div className="flex items-center text-center h-full">
+                    <div className="space-y-2">
+                      <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto">
+                        <MessageSquare />
+                      </div>
+                      <h4 className="text-sm font-medium light:text-gray-900 dark:text-white">
+                        No Conversations Yet
+                      </h4>
+                      <p className="text-xs light:text-gray-600 dark:text-gray-400">
+                        Start a new chat to see your conversations here.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-1">
@@ -651,26 +678,14 @@ export default function Chat() {
               >
                 {!selectedDocument ? (
                   <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg
-                          className="w-8 h-8 text-gray-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                          />
-                        </svg>
+                    <div className="text-center space-y-2">
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto">
+                        <FileInput />
                       </div>
-                      <h4 className="text-lg font-medium light:text-gray-900 dark:text-white mb-2">
+                      <h4 className="text-sm font-medium light:text-gray-900 dark:text-white">
                         No Document Selected
                       </h4>
-                      <p className="light:text-gray-600 dark:text-gray-400">
+                      <p className="text-xs light:text-gray-600 dark:text-gray-400">
                         Select a document from the right panel to start asking
                         questions
                       </p>
@@ -809,7 +824,7 @@ export default function Chat() {
           <div className="col-span-1 lg:col-span-1 flex flex-col order-last mb-5 min-h-0">
             <div className="light:bg-white dark:bg-slate-800 rounded-2xl shadow-xl border light:border-gray-200 dark:border-slate-700 flex flex-col h-full min-h-0">
               {/* Document List Header */}
-              <div className="px-6 py-4 border-b light:border-gray-200 dark:border-slate-600 flex-shrink-0">
+              <div className="px-6 py-[24px] border-b light:border-gray-200 dark:border-slate-600 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold light:text-gray-900 dark:text-white">
                     Processed Documents
@@ -851,29 +866,19 @@ export default function Chat() {
                     </span>
                   </div>
                 ) : processedDocuments.length === 0 ? (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg
-                        className="w-6 h-6 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
+                  <div className="flex items-center text-center h-full">
+                    <div className="space-y-2">
+                      <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto">
+                        <Files />
+                      </div>
+                      <h4 className="text-sm font-medium light:text-gray-900 dark:text-white">
+                        No Documents Yet
+                      </h4>
+                      <p className="text-xs light:text-gray-600 dark:text-gray-400">
+                        Process documents using "Ask Questions on Document" to
+                        see them here
+                      </p>
                     </div>
-                    <h4 className="text-sm font-medium light:text-gray-900 dark:text-white mb-2">
-                      No documents yet
-                    </h4>
-                    <p className="text-xs light:text-gray-600 dark:text-gray-400">
-                      Process documents using "Ask Questions on Document" to see
-                      them here
-                    </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -925,7 +930,7 @@ export default function Chat() {
                               </div>
                             </div>
                           </div>
-                          <Button
+                          {/* <Button
                             size="sm"
                             variant="outline"
                             onClick={(e) => {
@@ -951,7 +956,13 @@ export default function Chat() {
                                 d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                               />
                             </svg>
-                          </Button>
+                          </Button> */}
+                          <ConfirmBox
+                            docId={doc.id}
+                            sourceUrl={doc.sourceUrl || doc.fileUrl}
+                            sourceFileName={doc.sourceFileName || doc.fileName}
+                            onComplete={handleRefresh}
+                          />
                         </div>
                       </div>
                     ))}
