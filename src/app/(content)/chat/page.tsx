@@ -502,15 +502,16 @@ export default function Chat() {
     loadDbFiles();
   }, []);
 
-  const handleRefresh = async (status: boolean) => {
-    if (status) {
+  const handleRefresh = async (data: { status: boolean; message: string }) => {
+    if (data.status) {
       await loadProcessedDocuments();
       await loadConversations();
       setSelectedDocument(null);
 
       setRefreshTrigger((prev) => prev + 1);
+
       toast.success("Document deleted successfully", {
-        // description: result.message,
+        description: data.message,
       });
     }
   };

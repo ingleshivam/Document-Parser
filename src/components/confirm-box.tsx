@@ -26,12 +26,23 @@ export default function ConfirmBox({
   onComplete: any;
 }) {
   const [isComplete, setIsComplete] = useState({ status: false, message: "" });
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const handleComplete = () => {
+      if (isComplete.status) {
+        onComplete(isComplete);
+      }
+    };
+    handleComplete();
+  }, [isComplete]);
 
   const handleDeleteProcessedDocument = async (
     documentId: string,
     sourceUrl: string,
     documentTitle: string
   ) => {
+    setIsDeleting(true);
     console.log("Document ID : ", documentId);
     try {
       const result = await deleteProcessedDocumentWithQdrant(
@@ -39,15 +50,13 @@ export default function ConfirmBox({
         sourceUrl
       );
       if (result.success) {
-        // setIsComplete({ status: true, message: !!result.message });
-        // await loadProcessedDocuments();
-        // await loadConversations();
-        // setSelectedDocument(null);
-
-        // setRefreshTrigger((prev) => prev + 1);
-        toast.success("Document deleted successfully", {
-          description: result.message,
+        setIsComplete({
+          status: true,
+          message: result.message ? result.message : "",
         });
+
+        setIsDeleting(false);
+        setOpen(false);
       } else {
         toast.error("Failed to delete document", {
           description: result.error,
@@ -68,16 +77,13 @@ export default function ConfirmBox({
 
   return (
     <>
-      <AlertDialog>
+      <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogTrigger asChild>
           <Button
             size="sm"
             variant="outline"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDeleteProcessedDocument(docId, sourceUrl, sourceFileName);
-            }}
             className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 flex-shrink-0"
+            onClick={() => setOpen(true)}
           >
             <svg
               className="w-4 h-4"
@@ -103,8 +109,24 @@ export default function ConfirmBox({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction>Continue</AlertDialogAction>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 text-white hover:bg-red-400"
+              disabled={isDeleting}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteProcessedDocument(docId, sourceUrl, sourceFileName);
+              }}
+            >
+              {isDeleting ? (
+                <div className="flex gap-3">
+                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  Deleting...
+                </div>
+              ) : (
+                <div>Delete</div>
+              )}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
