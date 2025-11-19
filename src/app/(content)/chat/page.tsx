@@ -30,6 +30,7 @@ export interface Conversation {
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
+  processed_docs?: any;
 }
 
 export interface DbProcessedDocument {
@@ -46,15 +47,18 @@ export interface DbProcessedDocument {
 
 export default function Chat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  console.log("conversations : ", conversations);
   const [currentConversationId, setCurrentConversationId] = useState<
     string | null
   >(null);
   const [selectedDocument, setSelectedDocument] =
     useState<DbProcessedDocument | null>(null);
+  console.log("Selected Documented ;", selectedDocument);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoadingChat, setIsLoadingChat] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState("");
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [processedDocuments, setProcessedDocuments] = useState<
     DbProcessedDocument[]
   >([]);
@@ -85,10 +89,10 @@ export default function Chat() {
           setSelectedDocument({
             id: conversation.documentId,
             fileName: conversation.documentTitle,
-            fileUrl: "",
-            sourceUrl: "",
+            fileUrl: conversation.processed_docs.fileUrl,
+            sourceUrl: conversation.processed_docs.sourceUrl,
             processedAt: new Date(),
-            chunkCount: 0,
+            chunkCount: conversation.processed_docs.chunkCount || 0,
           });
         }
 
@@ -308,15 +312,13 @@ export default function Chat() {
         conversation.messages.length
       );
 
-      // Save all messages (let the database handle duplicates)
       let savedCount = 0;
       for (let i = 0; i < conversation.messages.length; i++) {
         const message = conversation.messages[i];
-        // Use a more unique ID that includes the message content hash
-        const messageId = `${conversation.id}_${i}_${message.timestamp.replace(
-          /[:.]/g,
-          "_"
-        )}`;
+        console.log("Message : ", message);
+        const safeTimestamp = String(message.timestamp).replace(/[:.]/g, "_");
+
+        const messageId = `${conversation.id}_${i}_${safeTimestamp}`;
 
         try {
           const messageResult = await createMessage({
@@ -332,7 +334,6 @@ export default function Chat() {
             console.error("Failed to save message:", messageResult.error);
           }
         } catch (error) {
-          // If message already exists, that's okay
           if (
             error instanceof Error &&
             (error.message.includes("Unique constraint") ||
@@ -374,69 +375,8 @@ export default function Chat() {
     }
   };
 
-  // const handleDeleteProcessedDocument = async (
-  //   documentId: string,
-  //   sourceUrl: string,
-  //   documentTitle: string
-  // ) => {
-  //   // if (
-  //   //   !confirm(
-  //   //     `Are you sure you want to delete "${documentTitle}"? This will permanently remove the document and all related chat history.`
-  //   //   )
-  //   // ) {
-  //   //   return;
-  //   // }
-  //   <ConfirmBox />;
-
-  //   console.log("Document ID : ", documentId);
-
-  //   // try {
-  //   //   const result = await deleteProcessedDocumentWithQdrant(
-  //   //     documentId,
-  //   //     sourceUrl
-  //   //   );
-  //   //   if (result.success) {
-  //   //     // const relatedConversations = conversations.filter(
-  //   //     //   (conv) =>
-  //   //     //     conv.documentTitle === fileName ||
-  //   //     //     conv.documentTitle.includes(fileName.replace(".md", ""))
-  //   //     // );
-
-  //   //     // for (const conversation of relatedConversations) {
-  //   //     //   try {
-  //   //     //     await deleteProcessedDocumentWithQdrant(
-  //   //     //       conversation.documentId,
-  //   //     //       conversation.documentTitle
-  //   //     //     );
-  //   //     //     console.log(
-  //   //     //       "Deleted chat history for conversation:",
-  //   //     //       conversation.id
-  //   //     //     );
-  //   //     //   } catch (error) {
-  //   //     //     console.error("Error deleting chat history:", error);
-  //   //     //   }
-  //   //     // }
-  //   //     await loadProcessedDocuments();
-  //   //     await loadConversations();
-  //   //     setSelectedDocument(null);
-
-  //   //     setRefreshTrigger((prev) => prev + 1);
-  //   //     toast.success("Document deleted successfully", {
-  //   //       description: result.message,
-  //   //     });
-  //   //   } else {
-  //   //     toast.error("Failed to delete document", {
-  //   //       description: result.error,
-  //   //     });
-  //   //   }
-  //   // } catch (error) {
-  //   //   toast.error("Failed to delete document", {
-  //   //     description: "An unexpected error occurred",
-  //   //   });
-  //   // }
-  // };
-
   const loadConversations = async () => {
+    setIsLoadingConversations(true);
     try {
       console.log("Loading conversations...");
       const result = await getConversations();
@@ -455,12 +395,11 @@ export default function Chat() {
             id: conv.id,
             title: conv.title,
             documentId: conv.fileId || "",
+            processed_docs: conv.processed_documents,
             documentTitle: (() => {
-              // First try to get from files relationship
-              if (conv.files?.sourceFileName) return conv.files.sourceFileName;
+              // if (conv.files?.sourceFileName) return covnesatio .files.sourceFileName;
               if (conv.files?.fileName) return conv.files.fileName;
 
-              // If no file relationship, try to find in processed documents
               if (conv.fileId) {
                 const processedDoc = dbProcessedDocuments.find(
                   (doc) => doc.id === conv.fileId
@@ -468,7 +407,6 @@ export default function Chat() {
                 if (processedDoc?.fileName) return processedDoc.fileName;
               }
 
-              // Fallback
               return conv.files ? "Document" : "Unknown";
             })(),
             messages: (conv.messages || []).map((msg: any) => ({
@@ -486,6 +424,8 @@ export default function Chat() {
       }
     } catch (error) {
       console.error("Error loading conversations:", error);
+    } finally {
+      setIsLoadingConversations(false);
     }
   };
 
@@ -565,7 +505,14 @@ export default function Chat() {
 
               {/* Conversation List */}
               <div className="flex-1 overflow-y-auto p-2">
-                {conversations.length === 0 ? (
+                {isLoadingConversations ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="ml-2 light:text-gray-600 dark:text-gray-400">
+                      Loading Conversations...
+                    </span>
+                  </div>
+                ) : conversations.length === 0 ? (
                   <div className="flex items-center text-center h-full">
                     <div className="space-y-2">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto">
@@ -931,33 +878,7 @@ export default function Chat() {
                               </div>
                             </div>
                           </div>
-                          {/* <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteProcessedDocument(
-                                doc.id,
-                                doc.sourceUrl || doc.fileUrl,
-                                doc.sourceFileName || doc.fileName
-                              );
-                            }}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 flex-shrink-0"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </Button> */}
+
                           <ConfirmBox
                             docId={doc.id}
                             sourceUrl={doc.sourceUrl || doc.fileUrl}

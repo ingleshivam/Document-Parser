@@ -3,6 +3,7 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { HuggingFaceAPIEmbedding } from "@/lib/embedModel";
 import Groq from "groq-sdk";
+import { matchesGlob } from "path";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -31,8 +32,8 @@ export async function queryDocument(
     const qdrantUrl = process.env.QDRANT_URL;
     const qdrantApiKey = process.env.QDRANT_API_KEY;
     const groqApiKey = process.env.GROQ_API_KEY;
-    const groqModel = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
-    const collection = process.env.QDRANT_COLLECTION || "documents";
+    const groqModel = process.env.GROQ_MODEL || "openai/gpt-oss-20b6";
+    const collection = process.env.QDRANT_COLLECTION || "RAG_DOCUMENTS";
 
     console.log("Environment check:", {
       hasQdrantUrl: !!qdrantUrl,
@@ -227,6 +228,7 @@ Please provide a helpful answer based on the context above.`;
         },
       ],
       model: groqModel,
+      reasoning_effort: "medium",
       temperature: 0.1,
       max_tokens: 500,
     });

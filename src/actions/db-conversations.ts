@@ -51,6 +51,7 @@ export async function getConversations() {
       where: { userId },
       include: {
         files: true,
+        processed_documents: true,
         messages: {
           orderBy: { createdAt: "asc" },
         },
