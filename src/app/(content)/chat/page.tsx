@@ -284,7 +284,6 @@ export default function Chat() {
         });
       } else {
         console.log("Creating new conversation");
-        // Create new conversation
         const convResult = await createConversation({
           id: conversation.id,
           title: conversation.title,
@@ -298,27 +297,81 @@ export default function Chat() {
         }
       }
 
-      // Get existing messages for this conversation
-      const existingMessagesResult = await getMessagesByConversationId(
-        conversation.id
-      );
-      const existingMessages = existingMessagesResult.success
-        ? existingMessagesResult.messages
-        : [];
-      console.log(
-        "Existing messages:",
-        existingMessages?.length || 0,
-        "New messages:",
-        conversation.messages.length
+      const existingResult = await getMessagesByConversationId(conversation.id);
+
+      if (!existingResult.success) {
+        console.error(
+          "Failed to fetch existing messages:",
+          existingResult.error
+        );
+      }
+
+      const existingMessages = existingResult.messages ?? [];
+
+      const normalizeContent = (content: string | null | undefined) =>
+        (content || "").trim();
+
+      const existingContents = new Set(
+        existingMessages.map((msg: any) => normalizeContent(msg.content))
       );
 
       let savedCount = 0;
+
+      // for (let i = 0; i < conversation.messages.length; i++) {
+      //   const message = conversation.messages[i];
+      //   console.log("Message : ", message);
+      //   const safeTimestamp = String(message.timestamp).replace(/[:.]/g, "_");
+
+      //   const messageId = `${conversation.id}_${i}_${safeTimestamp}`;
+
+      //   try {
+      //     const messageResult = await createMessage({
+      //       id: messageId,
+      //       conversationId: conversation.id,
+      //       role: message.role,
+      //       content: message.content,
+      //     });
+      //     if (messageResult.success) {
+      //       savedCount++;
+      //       console.log("Saved message:", messageId, "Role:", message.role);
+      //     } else {
+      //       console.error("Failed to save message:", messageResult.error);
+      //     }
+      //   } catch (error) {
+      //     if (
+      //       error instanceof Error &&
+      //       (error.message.includes("Unique constraint") ||
+      //         error.message.includes("duplicate"))
+      //     ) {
+      //       console.log("Message already exists, skipping:", messageId);
+      //     } else {
+      //       console.error("Error saving message:", error);
+      //     }
+      //   }
+      // }
+
       for (let i = 0; i < conversation.messages.length; i++) {
         const message = conversation.messages[i];
-        console.log("Message : ", message);
-        const safeTimestamp = String(message.timestamp).replace(/[:.]/g, "_");
+        console.log("Message:", message);
 
+        // Normalize timestamp
+        const safeTimestamp = String(message.timestamp).replace(/[:.]/g, "_");
         const messageId = `${conversation.id}_${i}_${safeTimestamp}`;
+
+        // Normalize new message content
+        const normalizedContent = normalizeContent(message.content);
+
+        // Optionally skip empty content
+        if (!normalizedContent) {
+          console.log("Empty content, skipping:", messageId);
+          continue;
+        }
+
+        // Check if this content already exists for this conversation
+        if (existingContents.has(normalizedContent)) {
+          console.log("Content already exists, skipping:", messageId);
+          continue;
+        }
 
         try {
           const messageResult = await createMessage({
@@ -327,24 +380,32 @@ export default function Chat() {
             role: message.role,
             content: message.content,
           });
+
           if (messageResult.success) {
             savedCount++;
             console.log("Saved message:", messageId, "Role:", message.role);
+
+            // Add to the set so further duplicates in this same run are skipped
+            existingContents.add(normalizedContent);
           } else {
             console.error("Failed to save message:", messageResult.error);
           }
-        } catch (error) {
+        } catch (error: any) {
           if (
             error instanceof Error &&
             (error.message.includes("Unique constraint") ||
               error.message.includes("duplicate"))
           ) {
-            console.log("Message already exists, skipping:", messageId);
+            console.log("Message already exists (race), skipping:", messageId);
+
+            // Also add to set to avoid retry duplicates later in the loop
+            existingContents.add(normalizedContent);
           } else {
             console.error("Error saving message:", error);
           }
         }
       }
+
       console.log("Saved", savedCount, "new messages");
 
       // Reload conversations and trigger overview refresh

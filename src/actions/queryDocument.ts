@@ -53,7 +53,6 @@ export async function queryDocument(
     const embeddingModel = new HuggingFaceAPIEmbedding();
     const groq = new Groq({ apiKey: groqApiKey });
 
-    // Check if collection exists and get its info
     try {
       const collectionInfo = await client.getCollection(collection);
       console.log("Collection info:", {
@@ -69,7 +68,6 @@ export async function queryDocument(
       };
     }
 
-    // Generate embedding for the question
     const questionEmbedding = await embeddingModel.getQueryEmbedding(question);
     if (!questionEmbedding) {
       return {
@@ -78,17 +76,14 @@ export async function queryDocument(
       };
     }
 
-    // Search for relevant chunks
     console.log("Searching Qdrant with:", {
       collection,
       sourceUrl,
       embeddingLength: questionEmbedding.length,
     });
 
-    // Try different filter structures
     let searchResult;
     try {
-      // First try with the original filter structure
       searchResult = await client.search(collection, {
         vector: questionEmbedding,
         filter: {
@@ -108,7 +103,6 @@ export async function queryDocument(
         filterError
       );
       try {
-        // Try with different filter structure
         searchResult = await client.search(collection, {
           vector: questionEmbedding,
           filter: {
@@ -127,7 +121,6 @@ export async function queryDocument(
           "Alternative filter failed, trying without filter:",
           altFilterError
         );
-        // Try without filter
         searchResult = await client.search(collection, {
           vector: questionEmbedding,
           limit: 5,
@@ -152,7 +145,6 @@ export async function queryDocument(
       };
     }
 
-    // Prepare context from search results
     const context = searchResult
       .map((result) => {
         const payload = result.payload as any;
@@ -171,20 +163,17 @@ export async function queryDocument(
       contextPreview: context.substring(0, 200) + "...",
     });
 
-    // Prepare chat history for context
     const historyContext = chatHistory
-      .slice(-6) // Keep last 6 messages for context
+      .slice(-6)
       .map((msg) => `${msg.role}: ${msg.content}`)
       .join("\n");
 
-    // Create the prompt for Groq - limit context length to avoid token limits
-    const maxContextLength = 3000; // Limit context to avoid token limits
+    const maxContextLength = 3000;
     const truncatedContext =
       context.length > maxContextLength
         ? context.substring(0, maxContextLength) + "..."
         : context;
-
-    // If context is too short, provide a fallback message
+    console.log("truncatedContext : ", truncatedContext);
     if (truncatedContext.length < 50) {
       return {
         success: false,
@@ -204,14 +193,12 @@ Please provide a helpful and accurate answer based on the document context.`;
 
     console.log("System prompt length:", systemPrompt.length);
 
-    // Query Groq
     console.log("Calling Groq API with:", {
       model: groqModel,
       systemPromptLength: systemPrompt.length,
       questionLength: question.length,
     });
 
-    // Try a simpler approach first
     const userMessage = `Based on this document context, please answer the question.
 
 Context: ${truncatedContext}
@@ -230,7 +217,9 @@ Please provide a helpful answer based on the context above.`;
       model: groqModel,
       reasoning_effort: "medium",
       temperature: 0.1,
-      max_tokens: 500,
+      presence_penalty: 0.6,
+      frequency_penalty: 0.5,
+      max_tokens: 8000,
     });
 
     console.log("Groq API response:", {
@@ -248,7 +237,6 @@ Please provide a helpful answer based on the context above.`;
       };
     }
 
-    // Prepare sources
     const sources = searchResult.map((result) => {
       const payload = result.payload as any;
       return {
@@ -267,7 +255,6 @@ Please provide a helpful answer based on the context above.`;
   } catch (error) {
     console.error("Error in queryDocument:", error);
 
-    // Handle specific Groq API errors
     if (error instanceof Error) {
       if (error.message.includes("401")) {
         return {

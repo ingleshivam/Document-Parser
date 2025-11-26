@@ -235,10 +235,7 @@ export default function OverviewContent() {
                   <File className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">
-                    {lastUploadedFile.sourceFileName ||
-                      lastUploadedFile.fileName}
-                  </h3>
+                  <h3 className="font-semibold">{lastUploadedFile.fileName}</h3>
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                     <span>
                       {lastUploadedFile.size
@@ -296,9 +293,7 @@ export default function OverviewContent() {
                         <File className="h-4 w-4 text-muted-foreground" />
                       </div>
                       <div>
-                        <p className="font-medium text-sm">
-                          {doc.sourceFileName || doc.fileName}
-                        </p>
+                        <p className="font-medium text-sm">{doc.fileName}</p>
                         <p className="text-xs text-muted-foreground">
                           {doc.size
                             ? `${(doc.size / 1024).toFixed(1)} KB`
